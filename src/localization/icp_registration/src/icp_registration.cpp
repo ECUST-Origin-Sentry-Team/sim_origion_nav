@@ -43,7 +43,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
   pcl::PassThrough<pcl::PointXYZI> height_filter;
   height_filter.setInputCloud(cloud);
   height_filter.setFilterFieldName("z");
-  height_filter.setFilterLimits(0.01, 10.0);
+  height_filter.setFilterLimits(-0.6, 10.0);
   height_filter.setNegative(false);
   height_filter.filter(*cloud);
 
@@ -175,6 +175,7 @@ void IcpNode::pointcloudCallback(
         std::make_shared<geometry_msgs::msg::PoseWithCovarianceStamped>();
     pose_msg->header = msg->header;
     pose_msg->pose.pose = initial_pose_;
+
     initialPoseCallback(pose_msg);
     first_scan_ = false;
   }

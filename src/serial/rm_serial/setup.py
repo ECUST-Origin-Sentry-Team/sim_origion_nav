@@ -21,8 +21,10 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "rm_serial_subpub=rm_serial.rm_serial_subpub_old:main",
-            "send_cmd_vel=rm_serial.send_cmd_vel:main"
+            "receive_from_c=rm_serial.ReceiveFromC_Board:main",
+            "send_to_c=rm_serial.SendToC_Board:main",
+
+
         ],
     },
 )

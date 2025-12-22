@@ -363,7 +363,7 @@ int main(int argc, char ** argv)
     nh->create_publisher<sensor_msgs::msg::PointCloud2>("cloud_effected", 1000);
   auto pub_laser_cloud_map = nh->create_publisher<sensor_msgs::msg::PointCloud2>("Laser_map", 1000);
   auto pub_odom_aft_mapped =
-    nh->create_publisher<nav_msgs::msg::Odometry>("aft_mapped_to_init", 1000);
+    nh->create_publisher<nav_msgs::msg::Odometry>("Odometry", 1000);
   auto pub_path = nh->create_publisher<nav_msgs::msg::Path>("path", 1000);
   auto tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(nh);
 

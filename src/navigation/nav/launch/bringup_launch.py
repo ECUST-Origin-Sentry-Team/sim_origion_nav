@@ -64,7 +64,7 @@ def generate_launch_description():
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         'use_sim_time',
-        default_value='false',
+        default_value='true',
         description='Use simulation (Gazebo) clock if true')
 
     declare_params_file_cmd = DeclareLaunchArgument(
@@ -100,9 +100,18 @@ def generate_launch_description():
                               'container_name': 'container'}.items())  
     ])
 
+
+    icp = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            
+            get_package_share_directory('icp_registration')+'/launch/icp.launch.py'
+        )
+    )
+
+
     # Create the launch description and populate
     ld = LaunchDescription()
-
+    # ld.add_action(icp)
     # Set environment variables
     ld.add_action(stdout_linebuf_envvar)
 

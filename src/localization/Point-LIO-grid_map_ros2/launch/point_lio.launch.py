@@ -36,7 +36,7 @@ def generate_launch_description():
       )
     declare_point_filter = DeclareLaunchArgument(
         'point_filter_num',
-        default_value='1',
+        default_value='4',
         )
 
     # declare_downsample = DeclareLaunchArgument(
@@ -46,12 +46,12 @@ def generate_launch_description():
 
     declare_surf = DeclareLaunchArgument(
         'filter_size_surf', 
-        default_value='0.3',
+        default_value='0.5',
         )
 
     declare_map = DeclareLaunchArgument(
         'filter_size_map', 
-        default_value='0.3',
+        default_value='0.5',
         )
     declare_save_pcd = DeclareLaunchArgument(
         'pcd_save.pcd_save_en', 
@@ -80,7 +80,7 @@ def generate_launch_description():
         parameters=[
             point_lio_cfg_dir,
             {
-                'use_imu_as_input': False,  # Change to True to use IMU as input of Point-LIO
+                # 'use_imu_as_input': False,  # Change to True to use IMU as input of Point-LIO
                 # 'prop_at_freq_of_imu': True,
                 # 'check_satu': True,
                 # 'init_map_size': 10,

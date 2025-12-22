@@ -54,13 +54,23 @@ def generate_launch_description():
     start_nav2_rviz = Node(
         package="rviz2",
         executable="rviz2",
-        namespace='',
-        arguments=["-d", os.path.join(bringup_dir, 'rviz', 'nav2_default_view.rviz')],
-        output="screen",
+        name="nav2_rviz",
+        arguments=[
+            "-d", os.path.join(bringup_dir, "rviz", "nav2_default_view.rviz"),
+            "--ros-args", "--log-level", "error",
+        ],
+        parameters=[{"use_sim_time": True}],
+        output="log",
         remappings=[
             ("/tf", "tf"),
             ("/tf_static", "tf_static"),
         ],
+    )
+
+    modify=IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            get_package_share_directory('modify_map_to_odom')+"/launch/modify.launch.py"
+        )
     )
     dec = Node(
             package="dec_tree",
@@ -80,7 +90,7 @@ def generate_launch_description():
             ComposableNode(
                 package='nav2_map_server',
                 plugin='nav2_map_server::MapServer',
-                parameters=[{'yaml_filename': os.path.join(bringup_dir, 'map', 'rmuc_2025.yaml')}],
+                parameters=[{'yaml_filename': os.path.join(bringup_dir, 'map', 'rmuc_2025_normalized.yaml')}],
                 name='map_server',),
             ComposableNode(
                 package='nav2_lifecycle_manager',
@@ -152,7 +162,7 @@ def generate_launch_description():
             #  rm_serial,
              pointlio,
              container,
-            #  tf,
+             modify,
             #gicp,      
              #lidar_transform,
             #  livox_ros_driver2,
@@ -162,10 +172,10 @@ def generate_launch_description():
              load_map_server,
              p_to_l,
              fake_baselink,
-             TimerAction(
-                period=4.0,
-                actions=[icp],
-            ),
+            #  TimerAction(
+            #     period=4.0,
+            #     actions=[icp],
+            # ),
              TimerAction(
                 period=8.0,
                 actions=[nav2],

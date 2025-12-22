@@ -8,10 +8,10 @@
       imu_topic: /livox/imu
       lid_topic: /livox/lidar
       time_diff_lidar_to_imu: 0.001792
-    filter_size_map: 0.3
-    filter_size_surf: 0.3
+    filter_size_map: 0.8
+    filter_size_surf: 0.8
     mapping:
-      acc_cov_input: 0.06
+      acc_cov_input: 0.04
       acc_cov_output: 500.0
       acc_norm: 1.0
       b_acc_cov: 0.01
@@ -42,7 +42,7 @@
       - 0.0
       - 0.0
       - -9.81
-      gyr_cov_input: 0.06
+      gyr_cov_input: 0.04
       gyr_cov_output: 1000.0
       imu_en: true
       imu_meas_acc_cov: 0.01

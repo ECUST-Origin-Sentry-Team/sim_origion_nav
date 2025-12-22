@@ -156,12 +156,12 @@ def generate_launch_description():
                 name='waypoint_follower',
                 parameters=[configured_params],
                 remappings=remappings),
-            # ComposableNode(
-            #     package='nav2_amcl',
-            #     plugin='nav2_amcl::AmclNode',
-            #     name='amcl',
-            #     parameters=[configured_params],
-            #     remappings=remappings),
+            ComposableNode(
+                package='nav2_amcl',
+                plugin='nav2_amcl::AmclNode',
+                name='amcl',
+                parameters=[configured_params],
+                remappings=remappings),
             ComposableNode(
                 package='nav2_velocity_smoother',
                 plugin='nav2_velocity_smoother::VelocitySmoother',
@@ -181,6 +181,12 @@ def generate_launch_description():
 
     load_nodes = GroupAction(
         actions=[
+            Node(
+                package='nav2_amcl',
+                executable='amcl',
+                name='amcl',
+                parameters=[configured_params],
+                remappings=remappings),
             Node(
                 package='nav2_controller',
                 executable='controller_server',
@@ -204,7 +210,7 @@ def generate_launch_description():
                 package='nav2_planner',
                 executable='planner_server',
                 name='planner_server',
-                output='screen',
+                output='both',
                 respawn=use_respawn,
                 respawn_delay=2.0,
                 parameters=[configured_params],
@@ -214,7 +220,7 @@ def generate_launch_description():
                 package='nav2_behaviors',
                 executable='behavior_server',
                 name='behavior_server',
-                output='screen',
+                output='both',
                 respawn=use_respawn,
                 respawn_delay=2.0,
                 parameters=[configured_params],
@@ -279,9 +285,9 @@ def generate_launch_description():
     ld.add_action(declare_container_name_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
-    ld.add_action(container)
+    #ld.add_action(container)
 
     # Add the actions to launch all of the navigation nodes
-    ld.add_action(load_composable_nodes)
+    ld.add_action(load_nodes)
 
     return ld

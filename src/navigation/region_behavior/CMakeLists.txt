@@ -8,6 +8,10 @@ endif()
 # find dependencies
 find_package(ament_cmake_auto REQUIRED)
 find_package(ament_cmake REQUIRED)
+find_package(rm_interfaces REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(Eigen3 REQUIRED)
 ament_auto_find_build_dependencies()
 
 ament_auto_add_executable(region_behavior_node

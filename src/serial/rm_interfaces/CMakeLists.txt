@@ -28,7 +28,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/JudgeSystemData.msg"
   "msg/OperatorCommand.msg"
   "msg/SerialReceiveData.msg"
+  "msg/IsAbleToChaseCall.msg"
+  "msg/IsAbleToChaseSend.msg"
+  "msg/GimbalRegionCmd.msg"
   "srv/SetMode.srv"
+  "srv/InvincibleInquire.srv"
   DEPENDENCIES
     std_msgs
     geometry_msgs
