@@ -80,7 +80,7 @@ def generate_launch_description():
         parameters=[
             point_lio_cfg_dir,
             {
-                # 'use_imu_as_input': False,  # Change to True to use IMU as input of Point-LIO
+                'use_imu_as_input': False,  # Change to True to use IMU as input of Point-LIO
                 # 'prop_at_freq_of_imu': True,
                 # 'check_satu': True,
                 # 'init_map_size': 10,
