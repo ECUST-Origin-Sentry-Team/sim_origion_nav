@@ -54,8 +54,7 @@ bt_navigator:
     use_sim_time: True
     global_frame: map
     robot_base_frame: base_link_fake
-    #robot_base_frame: base_link
-    odom_topic: /odometry_path
+    odom_topic: /odom
     bt_loop_duration: 10
     default_server_timeout: 20
     # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
@@ -153,7 +152,7 @@ controller_server:
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
     controller_plugins: ["FollowPath"]
-
+    speed_limit_topic: "/speed_limit"
     # Progress checker parameters
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
@@ -207,97 +206,73 @@ controller_server:
 
     FollowPath:    
       plugin: "nav2_mppi_controller::MPPIController"
-      #param 
-      adjustThre: 14.0 # slopeDegree larger than this value will trigger the adjust heading behavior
-      minAngleDiff: 365.0 # if the angle difference is larger than this value, the robot will continue to adjust heading
-      adjustHeadingSpeed: 0.2 # angular speed to adjust heading
-      # 
-      time_steps: 56 # prediction horizon = time_steps x model_dt = 3s
-      model_dt: 0.05 # =1/controller_frequency
-      batch_size: 2000 # Count of randomly sampled candidate trajectories from current optimal control sequence in a given iteration. 1000 @ 50 Hz or 2000 @ 30 Hz seems to produce good results.
-      vx_std: 0.5
-      vy_std: 0.5
-      wz_std: 0.1
-      vx_max: 2.5 #1.4 # prediction horizon x vx_max = 3.0 m -->local costmap dim should larger than 3.0 x 2 = 6m
-      vx_min: -2.5 # Maximum reverse velocity (m/s).
-      vy_max: 2.5
-      wz_max: 0.1
-      ax_max: 10.0
-      ay_max: 10.0
-      ax_min: -10.0
-      az_max: 0.1
-
-      iteration_count: 1 # Recommended to remain as 1 and instead prefer larger batch sizes.
-      prune_distance: 7.2 # proportion to your maximum velocity and prediction horizon. #影响上坡,值越大越上不了
-      transform_tolerance: 0.1 # Time tolerance for data transformations with TF (s).
-      temperature: 0.3 # 0 mean use control with best cost, huge value will lead to just taking mean of all trajectories without cost consideration.
-      gamma: 0.015 #0.07官方默认0.1 # A trade-off between smoothness (high) and low energy (low). This is a complex parameter that likely won’t need to be changed from the default.
+      time_steps: 56
+      model_dt: 0.06 # 预测时间：0.05*56=2.8s
+      
+      batch_size: 2000
+      vx_std: 0.5 #0.2
+      vy_std: 0.5 #0.2
+      wz_std: 0.1 #0.4
+      vx_max: 3.0 #0.5 预测距离：2.8*1.5=8.4m local_costmap的大小至少为8.4*8.4
+      vx_min: -3.0 #-0.35
+      vy_max: 3.0 #0.5
+      wz_max: 0.1 #1.9
+      ax_max: 20.0
+      ay_max: 20.0
+      ax_min: -20.0
+      ay_min: -20.0
+      iteration_count: 1
+      prune_distance: 8.5 #1.7 需大于等于8.4m
+      transform_tolerance: 0.1
+      temperature: 0.3
+      gamma: 0.015
       motion_model: "Omni"
-      visualize: true # set to true to visualize the trajectories, but it will slow down the computation by a lot
-      reset_period: 1.0 # Required time of inactivity to reset optimizer (only in Humble
-      regenerate_noises: false
-      retry_attempt_limit: 3 # Number of attempts to find feasible trajectory on failure for soft-resets before reporting total failure.
+      visualize: true
+      publish_optimal_trajectory : true
+
       TrajectoryVisualizer:
         trajectory_step: 5
         time_step: 3
-      # AckermannConstraints:
-      #   min_turning_r: 0.2
+      TrajectoryValidator:
+        plugin: "mppi::DefaultOptimalTrajectoryValidator"
+        collision_lookahead_time: 2.0
+        consider_footprint: false
       critics: ["ObstaclesCritic", "GoalCritic", "PathAlignCritic", "PathFollowCritic", "TwirlingCritic"]
       GoalCritic:
         enabled: true
         cost_power: 1
         cost_weight: 5.0
-        threshold_to_consider: 1.4 # Minimal distance (m) between robot and goal above which goal distance cost considered. It is wise to start with this as being the same as your prediction horizon to have a clean hand-off with the path follower critic.
-        # i.e. When this critic is add to the cost function 越小越上不去坡
-      PreferForwardCritic: # moving in the forward direction, rather than reversing.
-        enabled: false
-        cost_power: 1
-        cost_weight: 5
-        threshold_to_consider: 0.7 # Distance (m) between robot and goal to stop considering preferring forward and allow goal critics to take over.
-      ObstaclesCritic: # 如果容易撞到低矮的障碍物，检查地形分析是否正确然后再调整这个参数
+        threshold_to_consider: 2.8 #1.0 prediction horizon
+      ObstaclesCritic:
         enabled: true
         cost_power: 1
-        repulsion_weight: 0.3 #! Higher radii should correspond to reduced repulsion_weight due to the penalty formation (e.g. inflation_radius - min_dist_to_obstacle). 
-        # This is separated from the critical term to allow for fine tuning of obstacle behaviors with path alignment for dynamic scenes without impacting actions which may directly lead to near-collisions. This is applied within the inflation_radius distance from obstacles.
+        repulsion_weight: 0.1 #default: 1.5 和costmap配合避障，越大避障越强
         critical_weight: 20.0
-        consider_footprint: false # turn on this can increase computation cost
-        collision_cost: 100.0
-        collision_margin_distance: 0.05 # 0.05 # Margin distance (m) from collision to apply severe penalty, similar to footprint inflation. Between 0.05-0.2 is reasonable. Note that it will highly influence the controller not to enter spaces more confined than this, so ensure this parameter is set lower than the narrowest you expect the robot to need to traverse through.
-        near_goal_distance: 0.2 #0.1 # if the robot is within this distance of the goal, it will not be repelled by obstacles.
-        inflation_radius: 0.55 #0.4 # Radius to inflate costmap around lethal obstacles. This should be the same as for your inflation layer (Humble only)
-        cost_scaling_factor: 5.0 # Exponential decay factor across inflation radius. This should be the same as for your inflation layer (Humble only)
-        inflation_layer_name: ["local_inflation_layer","global_inflation_layer"] 
+        consider_footprint: false
+        collision_cost: 50.0
+        collision_margin_distance: 0.11 #多少米以内算危险区域
+        near_goal_distance: 0.5
+        inflation_radius: 0.55 # (only in Humble)
+        cost_scaling_factor: 5.0 #10.0 # (only in Humble)
+        inflation_layer_name: "inflation_layer" # local_costmap的layer name
       PathAlignCritic:
         enabled: true
-        cost_power: 1
-        cost_weight: 6.0
-        max_path_occupancy_ratio: 0.001
-        trajectory_point_step: 3 #?
-        threshold_to_consider: 2.0 # 0.7 # Distance (m) between robot and goal to stop considering path alignment and allow goal critics to take over. So just keep it same as threshold_to_consider in GoalCritic.
-        offset_from_furthest: 20 #2 #  A selection of this value to be ~30% of the maximum velocity distance projected is good 
-        # (e.g. if a planner produces points every 2.5cm, 60 can fit on the 1.5m local costmap radius. If the max speed is 0.5m/s with a 3s prediction time, 
-        # then 20 points represents 33% of the maximum speed projected over the prediction horizon onto the path). When in doubt, 
-        # prediction_horizon_s * max_speed / path_resolution / 3.0 is a good baseline. = 3 * 0.8 / 0.1 /3.0
-        use_path_orientations: false
-      PathFollowCritic: #? incentivizes making progress along the path, what is the diff between this and PathAlignCritic?
+        cost_power: 2   #1  改大转弯变好？
+        cost_weight: 8.0 #14.0 
+        max_path_occupancy_ratio: 0.05
+        trajectory_point_step: 2
+        threshold_to_consider: 0.40
+        offset_from_furthest: 25 #20 4.2m / 0.05(resolution) * 0.3 = 25.2
+      PathFollowCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 5.0 #越大越不稳定
-        offset_from_furthest: 10 # Number of path points after furthest one any trajectory achieves to drive path tracking relative to.
-        threshold_to_consider: 0.0 # That is to say, path following will be considered until the robot is within this distance of the goal, at which point the goal critic will take over.
-      PathAngleCritic: # This critic penalizes trajectories at a high relative angle to the path. This helps the robot make sharp turns when necessary due to large accumulated angular errors.
-        enabled: false
-        cost_power: 1 
         cost_weight: 5.0
-        offset_from_furthest: 25
-        threshold_to_consider: 1.4
-        max_angle_to_furthest: 1.0
-        mode: 2
+        offset_from_furthest: 25 #5
+        threshold_to_consider: 2.8 #0.6 prediction horizon
       TwirlingCritic:
-        enabled: True
+        enabled: true
         twirling_cost_power: 1
-        twirling_cost_weight: 5.0
-
+        twirling_cost_weight: 10.0
 
 local_costmap:
   local_costmap:
@@ -517,7 +492,7 @@ velocity_smoother:
     min_velocity: [-15.0, -15.0, -2.5]
     max_accel: [100.0, 100.0, 100.0]
     max_decel: [-100.0, -100.0, -100.0]
-    odom_topic: "/odometry_path"
+    odom_topic: "/odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0

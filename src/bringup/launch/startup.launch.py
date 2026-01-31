@@ -177,7 +177,7 @@ def generate_launch_description():
             #     actions=[icp],
             # ),
              TimerAction(
-                period=8.0,
+                period=3.0,
                 actions=[nav2],
             ),
             #  nav2,
