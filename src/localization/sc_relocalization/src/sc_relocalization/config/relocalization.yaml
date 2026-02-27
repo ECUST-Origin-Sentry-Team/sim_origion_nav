@@ -1,0 +1,20 @@
+relocalization_module:
+  ringkey_top_k : 20  # KD-tree 取 topK
+  sc_top_k: 10     # SC 精匹配保留 topM
+  icp_top_k     : 3 # 最后做 ICP 的候选数
+
+  sc_dist_thresh : 0.5 # SC 距离阈值（越小越像）
+  icp_fitness_thresh : 1.0  # ICP fitness 阈值（需调参）
+
+  # --- ICP params ---
+  icp_max_corr_dist : 2.0
+  icp_max_iter : 40
+
+  # --- local submap ---
+  local_submap_kf_num : 10   # 取候选 keyframe 前后 N 帧拼子图
+  local_map_voxel_leaf : 0.5 # 子图体素降采样
+  query_voxel_leaf : 0.5     # query 云体素降采样
+
+  # --- index rebuild ---
+  rebuild_index_every_n : 50    # 新增 keyframe 累积到 N 再重建 KD-tree
+    
