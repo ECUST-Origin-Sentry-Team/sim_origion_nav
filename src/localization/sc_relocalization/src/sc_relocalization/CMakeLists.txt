@@ -20,6 +20,9 @@ find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(OpenMP REQUIRED)
+find_package(small_gicp REQUIRED)
+find_package(Qt5 COMPONENTS Core REQUIRED)
 
 include_directories(
   include
@@ -38,6 +41,8 @@ target_link_libraries(sc_relocalization_node
   ${PCL_LIBRARIES}
   ${EIGEN3_LIBRARIES}
   yaml-cpp
+  OpenMP::OpenMP_CXX
+  Qt5::Core
 )
 
 ament_target_dependencies(sc_relocalization_node
@@ -51,6 +56,7 @@ ament_target_dependencies(sc_relocalization_node
   tf2_ros
   tf2_geometry_msgs
   pcl_conversions
+  small_gicp
 )
 
 # Install

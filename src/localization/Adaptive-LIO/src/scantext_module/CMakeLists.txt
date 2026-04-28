@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 include_directories(
     include
@@ -19,7 +20,7 @@ add_library(scantext_mapping_core STATIC
     src/Mapping.cpp
 )
 target_include_directories(scantext_mapping_core PUBLIC include)
-target_link_libraries(scantext_mapping_core scantext_core ${PCL_LIBRARIES})
+target_link_libraries(scantext_mapping_core scantext_core ${PCL_LIBRARIES} yaml-cpp)
 
 
 if(BUILD_TESTING)

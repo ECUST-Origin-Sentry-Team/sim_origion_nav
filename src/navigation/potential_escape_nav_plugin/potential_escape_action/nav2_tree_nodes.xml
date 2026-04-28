@@ -15,5 +15,11 @@
       <input_port name="server_timeout">Server timeout</input_port>
     </Action>
 
+    <Condition ID="RegionTimeout">
+      <input_port name="region_topic">Topic publishing the current region id</input_port>
+      <input_port name="target_region">Region id to monitor</input_port>
+      <input_port name="timeout_sec">Continuous dwell time before success</input_port>
+    </Condition>
+
   </TreeNodesModel>
 </root>

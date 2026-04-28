@@ -1,6 +1,7 @@
 #include "common/config.hpp"
 #include "lidarodom.h"
 #include <glog/logging.h>
+#include <pcl/filters/crop_box.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/common/io.h>
 #include <pcl/filters/passthrough.h>
@@ -100,6 +101,13 @@ namespace zjloc
                OPTION_CLAUSE(pub_node, cloud_pub_options, max_z_filter, float);
                OPTION_CLAUSE(pub_node, cloud_pub_options, min_z_filter, float);
                OPTION_CLAUSE(pub_node, cloud_pub_options, space_down_sample, float);
+               OPTION_CLAUSE(pub_node, cloud_pub_options, enable_body_filter, bool);
+               OPTION_CLAUSE(pub_node, cloud_pub_options, body_filter_x_min, float);
+               OPTION_CLAUSE(pub_node, cloud_pub_options, body_filter_x_max, float);
+               OPTION_CLAUSE(pub_node, cloud_pub_options, body_filter_y_min, float);
+               OPTION_CLAUSE(pub_node, cloud_pub_options, body_filter_y_max, float);
+               OPTION_CLAUSE(pub_node, cloud_pub_options, body_filter_z_min, float);
+               OPTION_CLAUSE(pub_node, cloud_pub_options, body_filter_z_max, float);
           }
      }
 
@@ -112,6 +120,10 @@ namespace zjloc
 
           auto yaml = YAML::LoadFile(config_yaml_);
           delay_time_ = yaml["delay_time"].as<double>();
+          if (yaml["aux_lidar"] && yaml["aux_lidar"]["min_points_per_measurement"])
+          {
+               min_aux_points_ = yaml["aux_lidar"]["min_points_per_measurement"].as<size_t>();
+          }
           // lidar和IMU外参
           std::vector<double> ext_t = yaml["mapping"]["extrinsic_T"].as<std::vector<double>>();
           std::vector<double> ext_r = yaml["mapping"]["extrinsic_R"].as<std::vector<double>>();
@@ -339,11 +351,7 @@ namespace zjloc
 
           //   观测
           SE3 pose_of_lo_ = SE3(current_state->rotation, current_state->translation);
-          
-          if (pub_scantext_data) {
-               pub_scantext_data(p_frame->point_surf, pose_of_lo_, meas.lidar_end_time_);
-          }
-          
+
           // std::cout << "obs: " << current_state->translation.transpose() << ", " << current_state->rotation.transpose() << std::endl;
           // SE3 pred_pose = eskf_.GetNominalSE3();
           // std::cout << "pred: " << pred_pose.translation().transpose() << ", " << pred_pose.so3().log().transpose() << std::endl;
@@ -1207,6 +1215,32 @@ namespace zjloc
                pass.setFilterLimits(cloud_pub_options.min_z_filter, cloud_pub_options.max_z_filter);
                pass.filter(*points_world);
 
+               if (cloud_pub_options.enable_body_filter)
+               {
+                    const Eigen::Matrix3d body_to_world_rot = end_quat.normalized().toRotationMatrix();
+                    const Eigen::Matrix3f world_to_body_rot = body_to_world_rot.transpose().cast<float>();
+                    const Eigen::Vector3f world_to_body_trans =
+                        (-body_to_world_rot.transpose() * end_t).cast<float>();
+
+                    Eigen::Affine3f world_to_body = Eigen::Affine3f::Identity();
+                    world_to_body.linear() = world_to_body_rot;
+                    world_to_body.translation() = world_to_body_trans;
+
+                    pcl::CropBox<pcl::PointXYZI> crop;
+                    crop.setInputCloud(points_world);
+                    crop.setTransform(world_to_body);
+                    crop.setMin(Eigen::Vector4f(cloud_pub_options.body_filter_x_min,
+                                                cloud_pub_options.body_filter_y_min,
+                                                cloud_pub_options.body_filter_z_min,
+                                                1.0f));
+                    crop.setMax(Eigen::Vector4f(cloud_pub_options.body_filter_x_max,
+                                                cloud_pub_options.body_filter_y_max,
+                                                cloud_pub_options.body_filter_z_max,
+                                                1.0f));
+                    crop.setNegative(true);
+                    crop.filter(*points_world);
+               }
+
                pcl::VoxelGrid<pcl::PointXYZI> vg;
                vg.setInputCloud(points_world);
                vg.setLeafSize(cloud_pub_options.space_down_sample, cloud_pub_options.space_down_sample, cloud_pub_options.space_down_sample);
@@ -1214,8 +1248,14 @@ namespace zjloc
                pcl::PointCloud<pcl::PointXYZI>::Ptr down(new pcl::PointCloud<pcl::PointXYZI>);
                vg.filter(*down);
                std::string laser_topic = "laser";
-               
+                
                pub_cloud_to_ros(laser_topic, down, p_frame->time_frame_end);
+
+               if (pub_scantext_data)
+               {
+                    SE3 pose_of_lo_ = SE3(current_state->rotation, current_state->translation);
+                    pub_scantext_data(points_world, pose_of_lo_, p_frame->time_frame_end);
+               }
           }
           points_world->clear();
      }
@@ -1361,7 +1401,10 @@ namespace zjloc
                if (lidar_buffer_.empty())
                     return measurements;
 
-               if (imu_buffer_.back()->timestamp_ - time_curr < delay_time_) // imu现在的时间与第一次init时间相比在时间段内
+               const double lidar_begin_time = time_buffer_.front().first;
+               const double lidar_end_time = lidar_begin_time + time_buffer_.front().second;
+
+               if (imu_buffer_.back()->timestamp_ < lidar_end_time + delay_time_)
                     return measurements;
 
                MeasureGroup meas;
@@ -1388,13 +1431,13 @@ namespace zjloc
                }
 
                // IMU 消耗完毕后，必须保证还有未来 IMU，否则数组越界
-               if (!imu_buffer_.empty())
-               {
-                    double t_begin = meas.lidar_begin_time_;
-                    double t_end = imu_buffer_.front()->timestamp_;
-                    // std::cout << "end imu" << std::endl;
-                    while (!aux_lidar_buffer_.empty())
-                    {
+                if (!imu_buffer_.empty())
+                {
+                     double t_begin = meas.lidar_begin_time_ - 0.01;
+                     double t_end = meas.lidar_end_time_ + 0.01;
+                     // std::cout << "end imu" << std::endl;
+                     while (!aux_lidar_buffer_.empty())
+                     {
                          auto &aux_time = aux_lidar_time_buffer_.front();
                          auto &aux = aux_lidar_buffer_.front();
 
@@ -1436,10 +1479,10 @@ namespace zjloc
                          }
 
                          // 4. 如果本窗口内有 aux lidar 点
-                         if (!cropped.empty())
+                         if (cropped.size() >= min_aux_points_)
                          {
-                              meas.aux_lidar_ = std::move(cropped);
-                              meas.aux_lidar_time_ = t_begin;
+                               meas.aux_lidar_ = std::move(cropped);
+                               meas.aux_lidar_time_ = t_begin;
                          }
 
                          // 5. 如果这一帧 aux lidar 的点已经用完 → pop
@@ -1451,14 +1494,12 @@ namespace zjloc
                          }
 
                          break; // 一个 MeasureGroup 只处理一次 aux lidar
-                    }
+                     }
 
-                    meas.imu_.push_back(imu_buffer_.front()); //   added for Interp
-               }
-               std::cout << meas.aux_lidar_.size() << std::endl;
-               std::cout << meas.lidar_.size() << std::endl;
+                     meas.imu_.push_back(imu_buffer_.front()); //   added for Interp
+                }
 
-               measurements.push_back(meas);
+                measurements.push_back(meas);
           }
      }
 

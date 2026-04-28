@@ -23,3 +23,6 @@ dbg.txt
 pos_log.txt
 
 rosbag*
+*.bin
+pose.txt
+*.zip

@@ -1,12 +1,20 @@
 // Relocalization.cpp
 
 #include "scantext_module/Relocalization.hpp"
-#include <pcl/registration/icp.h>
 #include <pcl/common/transforms.h>
 #include <pcl/filters/voxel_grid.h>
+#include <small_gicp/util/downsampling_omp.hpp>
+#include <small_gicp/util/normal_estimation_omp.hpp>
+#include <small_gicp/ann/kdtree_omp.hpp>
+#include <small_gicp/factors/gicp_factor.hpp>
+#include <small_gicp/registration/reduction_omp.hpp>
+#include <small_gicp/registration/registration.hpp>
+#include <small_gicp/pcl/pcl_point.hpp>
+#include <small_gicp/pcl/pcl_point_traits.hpp>
 #include <algorithm>
 #include <iostream>
 #include <numeric>
+#include <unordered_map>
 
 namespace scantext {
 
@@ -18,6 +26,11 @@ RelocalizationCore::RelocalizationCore()
 void RelocalizationCore::setConfig(const Config& config) {
     std::lock_guard<std::mutex> lock(relo_mutex_);
     config_ = config;
+}
+
+void RelocalizationCore::setScanContextParams(const SCParams& params) {
+    std::lock_guard<std::mutex> lock(relo_mutex_);
+    scan_context_ = ScanContext(params);
 }
 
 void RelocalizationCore::setMap(const std::vector<std::shared_ptr<KeyFrame>>& keyframes) {
@@ -200,7 +213,8 @@ ScanContext::PointCloudType::Ptr RelocalizationCore::buildLocalSubmapLocked(int 
         if (!kf || !kf->cloud || kf->cloud->empty()) continue;
 
         ScanContext::PointCloudType tmp;
-        pcl::transformPointCloud(*kf->cloud, tmp, kf->pose.matrix());
+        const Eigen::Isometry3d pose_for_submap = projectTo4DoF(kf->pose);
+        pcl::transformPointCloud(*kf->cloud, tmp, pose_for_submap.matrix());
         *submap += tmp;
     }
 
@@ -219,25 +233,57 @@ bool RelocalizationCore::runICP(const ScanContext::PointCloudType::Ptr& source_b
     if (source_base->empty() || target_map->empty()) return false;
 
     auto src = voxelDownsample(source_base, config_.query_voxel_leaf);
+    auto tgt = voxelDownsample(target_map, config_.local_map_voxel_leaf);
+    if (!src || !tgt || src->size() < 20 || tgt->size() < 20) return false;
 
-    pcl::IterativeClosestPoint<ScanContext::PointType, ScanContext::PointType> icp;
-    icp.setInputSource(src);
-    icp.setInputTarget(target_map);
-    icp.setMaximumIterations(config_.icp_max_iter);
-    icp.setMaxCorrespondenceDistance(config_.icp_max_corr_dist);
-    icp.setTransformationEpsilon(1e-4);
-    icp.setEuclideanFitnessEpsilon(1e-4);
+    auto src_cov = small_gicp::voxelgrid_sampling_omp<pcl::PointCloud<pcl::PointXYZI>, pcl::PointCloud<pcl::PointCovariance>>(
+        *src, config_.query_voxel_leaf);
+    auto tgt_cov = small_gicp::voxelgrid_sampling_omp<pcl::PointCloud<pcl::PointXYZI>, pcl::PointCloud<pcl::PointCovariance>>(
+        *tgt, config_.local_map_voxel_leaf);
+    if (!src_cov || !tgt_cov || src_cov->size() < 20 || tgt_cov->size() < 20) return false;
 
-    ScanContext::PointCloudType aligned;
-    Eigen::Matrix4f init = init_map_T_base.matrix().cast<float>();
-    icp.align(aligned, init);
+    const int num_threads = std::max(1, config_.gicp_num_threads);
+    const int num_neighbors = std::max(5, config_.gicp_num_neighbors);
 
-    if (!icp.hasConverged()) return false;
+    small_gicp::estimate_covariances_omp(*src_cov, num_neighbors, num_threads);
+    small_gicp::estimate_covariances_omp(*tgt_cov, num_neighbors, num_threads);
 
-    fitness = icp.getFitnessScore();
-    Eigen::Matrix4f T = icp.getFinalTransformation();
-    refined_map_T_base = Eigen::Isometry3d(T.cast<double>());
+    auto tgt_tree = std::make_shared<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>>(
+        tgt_cov, small_gicp::KdTreeBuilderOMP(num_threads));
+
+    small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP> gicp;
+    gicp.reduction.num_threads = num_threads;
+    gicp.rejector.max_dist_sq = config_.icp_max_corr_dist * config_.icp_max_corr_dist;
+    gicp.optimizer.max_iterations = config_.icp_max_iter;
+
+    const Eigen::Isometry3d init = projectTo4DoF(init_map_T_base);
+    auto result = gicp.align(*tgt_cov, *src_cov, *tgt_tree, init);
+    if (!result.converged) return false;
+
+    const double denom = static_cast<double>(std::max<size_t>(1, result.num_inliers));
+    fitness = result.error / denom;
+    refined_map_T_base = projectTo4DoF(result.T_target_source);
     return true;
+}
+
+Eigen::Isometry3d RelocalizationCore::projectTo4DoF(const Eigen::Isometry3d& pose) const {
+    if (!config_.use_4dof) {
+        return pose;
+    }
+
+    const double yaw = std::atan2(pose.rotation()(1, 0), pose.rotation()(0, 0));
+
+    Eigen::Isometry3d projected = Eigen::Isometry3d::Identity();
+    projected.translation() = pose.translation();
+    projected.linear() = Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()).toRotationMatrix();
+
+    if (config_.gravity_align) {
+        // Gravity-aligned mode currently enforces zero roll/pitch in map frame.
+        // Hook kept to support external gravity direction injection in the future.
+        return projected;
+    }
+
+    return projected;
 }
 
 bool RelocalizationCore::updateFromSC(const ScanContext::SCDescriptor& sc,
@@ -250,9 +296,10 @@ bool RelocalizationCore::updateFromSC(const ScanContext::SCDescriptor& sc,
     std::lock_guard<std::mutex> lock(relo_mutex_);
 
     if (map_keyframes_.empty()) return false;
+    if (!cloud_ds || cloud_ds->empty()) return false;
 
     // 0) 手动 initialpose：优先用 ICP 在手动初值附近收敛一次
-    if (has_manual_init_ && cloud_ds && !cloud_ds->empty()) {
+    if (has_manual_init_) {
         // 找最近 keyframe 当中心（简单做法：线性找最近位置）
         int best = -1;
         double best_d = 1e18;
@@ -264,7 +311,7 @@ bool RelocalizationCore::updateFromSC(const ScanContext::SCDescriptor& sc,
         auto submap = buildLocalSubmapLocked(best);
         Eigen::Isometry3d refined;
         double fit = 1e9;
-        bool ok = runICP(cloud_ds, submap, manual_init_pose_, refined, fit);
+        bool ok = runICP(cloud_ds, submap, projectTo4DoF(manual_init_pose_), refined, fit);
 
         if (ok && fit < config_.icp_fitness_thresh) {
             map_odom_transform_ = refined * odom_pose.inverse();
@@ -312,8 +359,9 @@ bool RelocalizationCore::updateFromSC(const ScanContext::SCDescriptor& sc,
         Candidate c;
         c.idx = idx;
         c.sc_dist = sc_dist;
+        c.match_dist = sc_dist;
         c.shift = shift;
-        c.init_pose = kf->pose * Eigen::Isometry3d(Rz); // map_T_base 初值（平移用 keyframe 平移）
+        c.init_pose = projectTo4DoF(kf->pose * Eigen::Isometry3d(Rz)); // map_T_base 初值（平移用 keyframe 平移）
         cands[i] = c;
     }
 
@@ -334,50 +382,95 @@ bool RelocalizationCore::updateFromSC(const ScanContext::SCDescriptor& sc,
         return a.sc_dist < b.sc_dist;
     });
 
+    const int scTopK = std::max(1, std::min(config_.sc_top_k, static_cast<int>(cands.size())));
+    cands.resize(scTopK);
+
+    if (config_.use_cart_context) {
+        std::unordered_map<int, ScanContext::CartDescriptor> query_cart_cache;
+        query_cart_cache.reserve(cands.size());
+        for (auto& c : cands) {
+            const auto& kf = map_keyframes_[c.idx];
+            if (!kf || !cloud_ds) {
+                continue;
+            }
+
+            const double yaw_diff = -static_cast<double>(c.shift) * 2.0 * M_PI / static_cast<double>(num_sector);
+            auto it = query_cart_cache.find(c.shift);
+            if (it == query_cart_cache.end()) {
+                it = query_cart_cache.emplace(c.shift, scan_context_.makeCartContext(*cloud_ds, yaw_diff)).first;
+            }
+            c.cart_dist = scan_context_.distanceBtnCartContext(kf->cart_descriptor, it->second);
+            if (std::isfinite(c.cart_dist)) {
+                c.match_dist = (1.0 - config_.cart_weight) * c.sc_dist + config_.cart_weight * c.cart_dist;
+            }
+        }
+
+        std::stable_sort(cands.begin(), cands.end(), [](const Candidate& a, const Candidate& b){
+            return a.match_dist < b.match_dist;
+        });
+    }
+
+    std::vector<Candidate> diverse_cands;
+    diverse_cands.reserve(cands.size());
+    for (const auto& cand : cands) {
+        bool separated = true;
+        if (config_.min_candidate_separation > 0.0) {
+            for (const auto& kept : diverse_cands) {
+                const double dist = (map_keyframes_[cand.idx]->pose.translation() -
+                                     map_keyframes_[kept.idx]->pose.translation()).norm();
+                if (dist < config_.min_candidate_separation) {
+                    separated = false;
+                    break;
+                }
+            }
+        }
+
+        if (separated || diverse_cands.empty()) {
+            diverse_cands.push_back(cand);
+        }
+    }
+    cands = std::move(diverse_cands);
+
     // 3) 取 topM 做 ICP refine（只做少量，保证快）
     const int topM = std::min(config_.icp_top_k, static_cast<int>(cands.size()));
     Candidate best = cands[0];
     
     // Only perform ICP if we have a valid cloud and candidates
-    if (cloud_ds && !cloud_ds->empty()) {
-        std::cout << "[Relocalization] Starting ICP on top " << topM << " candidates..." << std::endl;
-        
-        state_ = ReloState::RUNNING;
-        
-        for (int i = 0; i < topM; ++i) {
-            auto& c = cands[i];
-            auto submap = buildLocalSubmapLocked(c.idx);
-            if (!submap || submap->empty()) continue;
+    std::cout << "[Relocalization] Starting ICP on top " << topM << " candidates..." << std::endl;
 
-            Eigen::Isometry3d refined;
-            double fit = 1e9;
-            bool ok = runICP(cloud_ds, submap, c.init_pose, refined, fit);
-            c.icp_ok = ok;
-            c.icp_fitness = fit;
-            c.refined_pose = refined;
+    state_ = ReloState::RUNNING;
 
-            if (ok && fit < best.icp_fitness) {
-                best = c;
-            }
+    for (int i = 0; i < topM; ++i) {
+        auto& c = cands[i];
+        auto submap = buildLocalSubmapLocked(c.idx);
+        if (!submap || submap->empty()) continue;
+
+        Eigen::Isometry3d refined;
+        double fit = 1e9;
+        bool ok = runICP(cloud_ds, submap, c.init_pose, refined, fit);
+        c.icp_ok = ok;
+        c.icp_fitness = fit;
+        c.refined_pose = refined;
+
+        if (ok && fit < best.icp_fitness) {
+            best = c;
         }
+    }
 
-        // ICP 成功且 fitness 合格
-        if (best.icp_ok && best.icp_fitness < config_.icp_fitness_thresh) {
-            map_odom_transform_ = best.refined_pose * odom_pose.inverse();
-            is_localized_ = true;
-            state_ = ReloState::SUCC;
-            
-            // Print success info
-            auto t = best.refined_pose.translation();
-            auto r = best.refined_pose.rotation().eulerAngles(0, 1, 2);
-            std::cout << "[Relocalization] ICP succeeded, score=" << best.icp_fitness 
-                      << ", pose=(" << t.x() << "," << t.y() << "," << t.z() 
-                      << "," << r.x() << "," << r.y() << "," << r.z() << ")" << std::endl;
-                      
-            return true;
-        } else {
-             std::cout << "[Relocalization] ICP failed or score too high (" << best.icp_fitness << " > " << config_.icp_fitness_thresh << ")" << std::endl;
-        }
+    // ICP 成功且 fitness 合格
+    if (best.icp_ok && best.icp_fitness < config_.icp_fitness_thresh) {
+        map_odom_transform_ = best.refined_pose * odom_pose.inverse();
+        is_localized_ = true;
+        state_ = ReloState::SUCC;
+
+        // Print success info
+        auto t = best.refined_pose.translation();
+        auto r = best.refined_pose.rotation().eulerAngles(0, 1, 2);
+        std::cout << "[Relocalization] ICP succeeded, score=" << best.icp_fitness
+                  << ", pose=(" << t.x() << "," << t.y() << "," << t.z()
+                  << "," << r.x() << "," << r.y() << "," << r.z() << ")" << std::endl;
+
+        return true;
     }
 
     // 4) 如果没有 cloud 或 ICP 不收敛：退化用 SC 的 init_pose（精度差，但可用）

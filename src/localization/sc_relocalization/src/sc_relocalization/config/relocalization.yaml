@@ -1,14 +1,23 @@
 relocalization_module:
   ringkey_top_k : 20  # KD-tree 取 topK
-  sc_top_k: 10     # SC 精匹配保留 topM
-  icp_top_k     : 3 # 最后做 ICP 的候选数
+  sc_top_k: 12     # SC 精匹配保留 topM
+  icp_top_k     : 5 # 最后做 ICP 的候选数
+  use_cart_context: true
+  cart_weight: 0.20
+  min_candidate_separation: 10.0
 
   sc_dist_thresh : 0.5 # SC 距离阈值（越小越像）
-  icp_fitness_thresh : 1.0  # ICP fitness 阈值（需调参）
+  icp_fitness_thresh : 0.35  # ICP fitness 阈值（越小越严格）
 
   # --- ICP params ---
   icp_max_corr_dist : 2.0
   icp_max_iter : 40
+  gicp_num_threads : 4
+  gicp_num_neighbors : 20
+
+  # --- pose constraints ---
+  use_4dof : true
+  gravity_align : true
 
   # --- local submap ---
   local_submap_kf_num : 10   # 取候选 keyframe 前后 N 帧拼子图
@@ -17,4 +26,16 @@ relocalization_module:
 
   # --- index rebuild ---
   rebuild_index_every_n : 50    # 新增 keyframe 累积到 N 再重建 KD-tree
+
+  scantext:
+    num_ring: 20
+    num_sector: 60
+    max_radius: 80.0
+    lidar_height: 2.0
+    use_scpp: true
+    scpp_search_ratio: 0.2
+    cart_x_unit: 5.0
+    cart_y_unit: 2.0
+    cart_x_max: 100.0
+    cart_y_max: 40.0
     

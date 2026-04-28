@@ -71,9 +71,16 @@ namespace zjloc
 
      struct cloud_pub_m
      {
-          float max_z_filter;
-          float min_z_filter;
-          float space_down_sample;
+          float max_z_filter = 1.5f;
+          float min_z_filter = -1.0f;
+          float space_down_sample = 0.01f;
+          bool enable_body_filter = false;
+          float body_filter_x_min = -0.5f;
+          float body_filter_x_max = 0.5f;
+          float body_filter_y_min = -0.5f;
+          float body_filter_y_max = 0.5f;
+          float body_filter_z_min = -1.0f;
+          float body_filter_z_max = 0.5f;
      };
      
 
@@ -95,7 +102,7 @@ namespace zjloc
           void setFunc(std::function<bool(std::string &topic_name, CloudPtr &cloud, double time)> &fun) { pub_cloud_to_ros = fun; }
           void setFunc(std::function<bool(std::string &topic_name, SE3 &pose, double time)> &fun) { pub_pose_to_ros = fun; }
           void setFunc(std::function<bool(std::string &topic_name, double time1, double time2)> &fun) { pub_data_to_ros = fun; }
-          void setFunc(std::function<bool(const std::vector<point3D>& points, const SE3& pose, double time)> &fun) { pub_scantext_data = fun; }
+          void setFunc(std::function<bool(const CloudPtr &cloud, const SE3 &pose, double time)> &fun) { pub_scantext_data = fun; }
           void setCloudConvert(CloudConvertInterface *cloud_convert) { convert = cloud_convert; }
 
      private:
@@ -172,6 +179,7 @@ namespace zjloc
           int index_frame = 1;
           lioOptions_m options_;
           cloud_pub_m cloud_pub_options;
+          size_t min_aux_points_ = 100;
 
           CloudConvertInterface *convert = nullptr;
 
@@ -219,8 +227,8 @@ namespace zjloc
           std::function<bool(std::string &topic_name, CloudPtr &cloud, double time)> pub_cloud_to_ros;
           std::function<bool(std::string &topic_name, SE3 &pose, double time)> pub_pose_to_ros;
           std::function<bool(std::string &topic_name, double time1, double time2)> pub_data_to_ros;
-          // Callback for ScanContext module (Points in local frame, Pose in world frame)
-          std::function<bool(const std::vector<point3D>& points, const SE3& pose, double time)> pub_scantext_data;
+          // Callback for ScanContext module (world cloud + world pose)
+          std::function<bool(const CloudPtr &cloud, const SE3 &pose, double time)> pub_scantext_data;
 
           pcl::PointCloud<pcl::PointXYZI>::Ptr points_world;
      };

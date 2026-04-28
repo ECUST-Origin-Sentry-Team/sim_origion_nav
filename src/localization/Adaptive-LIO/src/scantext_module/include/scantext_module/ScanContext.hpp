@@ -20,6 +20,14 @@ namespace scantext
         int num_sector = 60;
         double max_radius = 80.0;
         double lidar_height = 2.0; // For filtering ground if needed, or just relative
+        bool use_scpp = true;
+        double scpp_search_ratio = 0.1;
+
+        // Cart Context (Scan Context++ TRO)
+        double cart_x_unit = 5.0;
+        double cart_y_unit = 2.0;
+        double cart_x_max = 100.0;
+        double cart_y_max = 40.0;
     };
 
     /**
@@ -32,6 +40,8 @@ namespace scantext
         using PointCloudType = pcl::PointCloud<PointType>;
         using SCDescriptor = Eigen::MatrixXd; // num_ring x num_sector
         using RingKey = Eigen::VectorXd;      // num_ring x 1
+        using SectorKey = Eigen::VectorXd;    // num_sector x 1
+        using CartDescriptor = Eigen::MatrixXd;
         template <typename PointT, typename GetXYZ>
         SCDescriptor makeScanContextFromPoints(const std::vector<PointT> &points, GetXYZ get_xyz) const;
 
@@ -59,6 +69,12 @@ namespace scantext
          */
         RingKey makeRingKey(const SCDescriptor &sc);
 
+        SectorKey makeSectorKey(const SCDescriptor &sc);
+
+        CartDescriptor makeCartContext(const PointCloudType &scan, double yaw_offset = 0.0);
+
+        double distanceBtnCartContext(const CartDescriptor &cc1, const CartDescriptor &cc2) const;
+
         /**
          * @brief Calculate distance between two ScanContexts
          *
@@ -78,6 +94,10 @@ namespace scantext
 
         // Helper: circular shift of matrix columns
         SCDescriptor circshift(const SCDescriptor &sc, int shift);
+
+        int fastAlignUsingSectorKey(const SectorKey &vkey_ref, const SectorKey &vkey_query) const;
+
+        double distDirectSC(const SCDescriptor &sc1, const SCDescriptor &sc2) const;
     };
 
 

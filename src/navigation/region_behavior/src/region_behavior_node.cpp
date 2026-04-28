@@ -11,7 +11,7 @@ RegionBehaviorNode::RegionBehaviorNode() : Node("region_behavior_node")
     this->get_parameter("base_link_frame_id", base_link_frame_id_);
 
     std::string pkg_dir = ament_index_cpp::get_package_share_directory("region_behavior");
-    std::string default_path = pkg_dir + "/config/regions.yaml";
+    std::string default_path = pkg_dir + "/config/0409reg.yaml";
     this->declare_parameter("yaml_path", default_path);
     this->get_parameter("yaml_path", yaml_path_);
 
@@ -27,12 +27,17 @@ RegionBehaviorNode::RegionBehaviorNode() : Node("region_behavior_node")
 
     region_int_pub_ = this->create_publisher<std_msgs::msg::Int32>("/region_int", 10);
     gimbal_cmd_pub_ = this->create_publisher<rm_interfaces::msg::GimbalRegionCmd>("/serial/gimbal_region_cmd", 10);
+
+    region_area_pub_ = this->create_publisher<rm_interfaces::msg::RegionArea>(
+        "/region_area", 1);
     uphill_pub_ = this->create_publisher<std_msgs::msg::Bool>(
         "/serial/uphill", 10);
     speed_limit_pub_ = this->create_publisher<nav2_msgs::msg::SpeedLimit>(
         "/speed_limit", 10);
     arrow_pub = this->create_publisher<visualization_msgs::msg::Marker>(
         "/direction_arrow", 1);
+
+
     timer_ = this->create_wall_timer(
         std::chrono::milliseconds(10),
         std::bind(&RegionBehaviorNode::timer_callback, this));
@@ -40,16 +45,14 @@ RegionBehaviorNode::RegionBehaviorNode() : Node("region_behavior_node")
     get_region_service_ = this->create_service<region_behavior::srv::GetRegion>(
         "/region_behavior/get_region",
         std::bind(&RegionBehaviorNode::handle_get_region, this, std::placeholders::_1, std::placeholders::_2));
-
+    area_pub_msg_.area_type = rm_interfaces::msg::RegionArea::OUR;
     RCLCPP_INFO(this->get_logger(), "节点启动完成。");
 }
-
 bool RegionBehaviorNode::load_regions(const std::string &yaml_path)
 {
     try
     {
         YAML::Node config = YAML::LoadFile(yaml_path);
-        
         if (!config["regions"])
         {
             RCLCPP_ERROR(this->get_logger(), "YAML文件中未找到 'regions' 节点");
@@ -70,6 +73,30 @@ bool RegionBehaviorNode::load_regions(const std::string &yaml_path)
                 pt.z = p_node["z"].as<double>();
                 region.points.push_back(pt);
             }
+
+            for (auto it = region_node.begin(); it != region_node.end(); ++it)
+            {
+                std::string key = it->first.as<std::string>();
+
+                if (key == "id" || key == "type" || key == "points")
+                {
+                    continue;
+                }
+
+                try
+                {
+                    region.custom_keys[key] = it->second.as<std::string>();
+                }
+                catch (const YAML::Exception &e)
+                {
+                    RCLCPP_WARN(this->get_logger(),
+                                "区域 %s 的自定义 key %s 无法转成 string，已跳过: %s",
+                                region.id.c_str(),
+                                key.c_str(),
+                                e.what());
+                }
+            }
+
             region.long_edge = compute_long_edge(region.points);
             regions_.push_back(region);
             RCLCPP_INFO(this->get_logger(), "加载区域成功: %s (顶点数: %zu)",
@@ -122,6 +149,172 @@ int RegionBehaviorNode::get_region_int(const geometry_msgs::msg::Point &pt, Regi
     return -1;
 }
 
+
+void RegionBehaviorNode::start_bumpy_session(
+    const Region &region,
+    const Eigen::Vector2d &curr_pos_vect,
+    const geometry_msgs::msg::TransformStamped &tf)
+{
+    Eigen::Vector2d A = region.long_edge.start;
+    Eigen::Vector2d B = region.long_edge.end;
+
+    // 当前点更靠近哪一端，就认为从哪一端进入
+    if ((curr_pos_vect - A).squaredNorm() < (curr_pos_vect - B).squaredNorm())
+    {
+        entry_end_ = A;
+        exit_end_ = B;
+        pass_direction_ = (B - A).normalized();
+        RCLCPP_INFO(this->get_logger(), "[颠簸区] 入口侧=A，出口侧=B");
+    }
+    else
+    {
+        entry_end_ = B;
+        exit_end_ = A;
+        pass_direction_ = (A - B).normalized();
+        RCLCPP_INFO(this->get_logger(), "[颠簸区] 入口侧=B，出口侧=A");
+    }
+
+    total_len_ = (exit_end_ - entry_end_).norm();
+    max_progress_in_region_ = 0.0;
+    last_progress_ = 0.0;
+    last_inside_pos_ = curr_pos_vect;
+    bumpy_session_active_ = true;
+    current_bumpy_passed_ = false;
+    current_bumpy_retreated_ = false;
+    auto it = region.custom_keys.find("side");
+    if (it != region.custom_keys.end()) {
+        current_bumpy_region_area_ = it->second;
+    }
+
+    publish_rectangle_debug_marker(region, pass_direction_, curr_pos_);
+
+    tf2::Quaternion q(
+        tf.transform.rotation.x,
+        tf.transform.rotation.y,
+        tf.transform.rotation.z,
+        tf.transform.rotation.w);
+    double roll, pitch, robot_yaw;
+    tf2::Matrix3x3(q).getRPY(roll, pitch, robot_yaw);
+
+    double dir_yaw = std::atan2(pass_direction_.y(), pass_direction_.x());
+    double angle = dir_yaw - robot_yaw;
+
+    angle = std::fmod(angle + M_PI, 2 * M_PI);
+    if (angle < 0)
+    {
+        angle += 2.0 * M_PI;
+    }
+    angle -= M_PI;
+    in_region_angle = angle * 180.0 / M_PI;
+
+    RCLCPP_INFO(this->get_logger(),
+                "[颠簸区] 开始一次通过判定: total_len=%.3f m, in_region_angle=%.2f deg",
+                total_len_, in_region_angle);
+}
+
+void RegionBehaviorNode::update_bumpy_progress(const Eigen::Vector2d &curr_pos_vect)
+{
+    if (!bumpy_session_active_ || total_len_ < 1e-6)
+    {
+        return;
+    }
+
+    double progress = (curr_pos_vect - entry_end_).dot(pass_direction_);
+
+    // 限制到 [0, total_len_]
+    progress = std::clamp(progress, 0.0, total_len_);
+
+    last_progress_ = progress;
+    max_progress_in_region_ = std::max(max_progress_in_region_, progress);
+    last_inside_pos_ = curr_pos_vect;
+}
+
+void RegionBehaviorNode::finish_bumpy_session()
+{
+    if (!bumpy_session_active_)
+    {
+        return;
+    }
+
+    const double pass_ratio = (total_len_ > 1e-6) ? (max_progress_in_region_ / total_len_) : 0.0;
+
+    double d_entry = (last_inside_pos_ - entry_end_).norm();
+    double d_exit = (last_inside_pos_ - exit_end_).norm();
+    bool near_exit_side = d_exit < d_entry;
+
+    
+    // 1) 最大进度超过总长度的80%
+    // 2) 离开前最后一个区域内位置更接近出口侧
+    if (pass_ratio > 0.7 && near_exit_side)
+    {
+        current_bumpy_passed_ = true;
+        current_bumpy_retreated_ = false;
+        RCLCPP_INFO(this->get_logger(),
+                    "[颠簸区] 判定结果：完整通过。pass_ratio=%.3f, d_entry=%.3f, d_exit=%.3f",
+                    pass_ratio, d_entry, d_exit);
+
+        /* ========================以下为颠簸路段特化===============================*/
+        geometry_msgs::msg::TransformStamped tf;
+
+        tf = tf_buffer_->lookupTransform(map_frame_id_, base_link_frame_id_, tf2::TimePointZero);
+        tf2::Quaternion q(
+            tf.transform.rotation.x,
+            tf.transform.rotation.y,
+            tf.transform.rotation.z,
+            tf.transform.rotation.w);
+        double roll, pitch, robot_yaw;
+        tf2::Matrix3x3(q).getRPY(roll, pitch, robot_yaw);
+
+
+        if (current_bumpy_region_area_ == "ourside")
+        {
+            if (abs(robot_yaw)< 90.0)
+            { // 向中央高地
+                area_pub_msg_.area_type = rm_interfaces::msg::RegionArea::MID;
+            }
+            else
+            { // 从中央高低回来
+                std::cout << "ourside" << std::endl;
+                area_pub_msg_.area_type = rm_interfaces::msg::RegionArea::OUR;
+            }
+        }
+        else if ( current_bumpy_region_area_ == "theirside")
+        {
+            if (abs(robot_yaw)< 90.0)
+            { // 向敌方基地
+                area_pub_msg_.area_type = rm_interfaces::msg::RegionArea::THEIR;
+            }
+            else
+            { // 向中央高低
+                area_pub_msg_.area_type = rm_interfaces::msg::RegionArea::MID;
+            }
+
+        }
+        current_bumpy_region_area_ = "";
+        /* ========================以上为颠簸路段特化===============================*/
+
+
+    }
+    else
+    {
+        current_bumpy_passed_ = false;
+        current_bumpy_retreated_ = true;
+        RCLCPP_WARN(this->get_logger(),
+                    "[颠簸区] 判定结果：中途退出/退回。pass_ratio=%.3f, d_entry=%.3f, d_exit=%.3f",
+                    pass_ratio, d_entry, d_exit);
+    }
+
+    bumpy_session_active_ = false;
+    max_progress_in_region_ = 0.0;
+    last_progress_ = 0.0;
+    total_len_ = 0.0;
+    entry_end_ = Eigen::Vector2d::Zero();
+    exit_end_ = Eigen::Vector2d::Zero();
+    pass_direction_ = Eigen::Vector2d::Zero();
+    last_inside_pos_ = Eigen::Vector2d::Zero();
+    
+}
+
 void RegionBehaviorNode::timer_callback()
 {
     geometry_msgs::msg::TransformStamped tf;
@@ -137,9 +330,13 @@ void RegionBehaviorNode::timer_callback()
         RCLCPP_WARN(this->get_logger(), "TF查询失败: %s", e.what());
         return;
     }
+
     Region region_;
     Eigen::Vector2d curr_pos_vect(curr_pos_.x, curr_pos_.y);
     int region_int = get_region_int(curr_pos_, region_);
+
+    bool leave_bumpy = (last_region_int_ == 1 && region_int != 1);
+
     auto msg = std_msgs::msg::Int32();
     msg.data = region_int;
     region_int_pub_->publish(msg);
@@ -149,15 +346,25 @@ void RegionBehaviorNode::timer_callback()
     region_cmd_.pass_region_angle = 0.0;
     uphill_cmd_.data = false;
     nav2_msgs::msg::SpeedLimit speed_msg;
-    /* 确保每次进区域都只发一个方向 */
+
+    // 若刚离开颠簸区，先做判定，再清普通状态
+    if (leave_bumpy)
+    {
+        finish_bumpy_session();
+        in_region_ = false;
+        waiting_times = 0;
+        direction = Eigen::Vector2d::Zero();
+    }
+
     switch (region_int)
     {
-    case -1: // 没进
+    case -1: // 没进任何特殊区域
         in_region_ = false;
         waiting_times = 0;
         direction = Eigen::Vector2d::Zero();
         break;
     case 1: // 颠簸路段
+    {
         // 如果没有让哨兵停止小陀螺，则停止
         if (waiting_times <= exp_waiting_times)
         {
@@ -173,66 +380,52 @@ void RegionBehaviorNode::timer_callback()
         // 从没进到进
         if (!in_region_)
         {
-            RCLCPP_INFO(this->get_logger(), "in_region_check");
+            RCLCPP_INFO(this->get_logger(), "[颠簸区] 首次进入，建立通过会话");
+            start_bumpy_session(region_, curr_pos_vect, tf);
             in_region_ = true;
+            direction = pass_direction_;
 
-            Eigen::Vector2d A = region_.long_edge.start;
-            Eigen::Vector2d B = region_.long_edge.end;
-            // A 更接近 B
-            if ((curr_pos_vect - A).squaredNorm() < (curr_pos_vect - B).squaredNorm())
-            {
-                // curr 更靠近 A → 发布 A → B 的方向
-                direction = (B - A).normalized();
-                RCLCPP_INFO(this->get_logger(), "a to b");
-
-                publish_rectangle_debug_marker(region_, direction, curr_pos_);
-            }
-            else
-            {
-                // curr 更靠近 B → 发布 B → A 的方向
-                direction = (A - B).normalized();
-                RCLCPP_INFO(this->get_logger(), "b to a");
-                publish_rectangle_debug_marker(region_, direction, curr_pos_);
-            }
-
-            tf2::Quaternion q(
-                tf.transform.rotation.x,
-                tf.transform.rotation.y,
-                tf.transform.rotation.z,
-                tf.transform.rotation.w);
-            double _, robot_yaw;
-            tf2::Matrix3x3(q).getRPY(_, _, robot_yaw);
-            double dir_yaw = std::atan2(direction.y(), direction.x());
-
-            double angle = dir_yaw - robot_yaw;
-
-            angle = std::fmod(angle + M_PI, 2 * M_PI);
-            if (angle < 0)
-            {
-                angle += 2.0 * M_PI;
-            }
-            angle -= M_PI;
-            in_region_angle = angle * 180.0 / M_PI;
         }
+
+        update_bumpy_progress(curr_pos_vect);
+        
 
         region_cmd_.chassis_mode = 1;
         region_cmd_.pass_special_region = 1;
         region_cmd_.pass_region_angle = in_region_angle;
+
         speed_msg.percentage = false;
-        speed_msg.speed_limit = 2.0;
+        speed_msg.speed_limit = 1.5;
         speed_limit_pub_->publish(speed_msg);
+
+        // 可选：输出当前进度，方便调试
+        if (bumpy_session_active_ && total_len_ > 1e-6)
+        {
+            RCLCPP_DEBUG(this->get_logger(),
+                         "[颠簸区] progress=%.3f / %.3f (%.1f%%), max=%.3f",
+                         last_progress_, total_len_,
+                         100.0 * last_progress_ / total_len_,
+                         max_progress_in_region_);
+        }
+
         break;
-    // 上坡发超电   
-    case 2: 
-        uphill_cmd_.data= true;
+    }
+
+    case 2: // 上坡发超电
+        uphill_cmd_.data = true;
         break;
+
     default:
         break;
     }
     /* start: 每tick均要发送 */
     uphill_pub_->publish(uphill_cmd_);
     gimbal_cmd_pub_->publish(region_cmd_);
+    region_area_pub_->publish(area_pub_msg_);
     /* end:   每tick均要发送 */
+
+    // 记录上一拍区域类型
+    last_region_int_ = region_int;
 }
 
 void RegionBehaviorNode::publish_rectangle_debug_marker(
@@ -258,9 +451,6 @@ void RegionBehaviorNode::publish_rectangle_debug_marker(
     mk.points.push_back(region.points[0]);
     arrow_pub->publish(mk);
 
-    // ====================
-    //     画方向箭头
-    // ====================
     visualization_msgs::msg::Marker arrow;
     arrow.header = mk.header;
     arrow.ns = "rect_arrow";
@@ -285,9 +475,6 @@ void RegionBehaviorNode::publish_rectangle_debug_marker(
 
     arrow_pub->publish(arrow);
 
-    // ====================
-    //     点 P 的球
-    // ====================
     visualization_msgs::msg::Marker sphere;
     sphere.header = mk.header;
     sphere.id = 3;
@@ -344,6 +531,7 @@ void RegionBehaviorNode::handle_get_region(
     for (const auto &pt : request->locations)
     {
         int id = get_region_int(pt, temp_region);
+        RCLCPP_INFO(this->get_logger(), "查询点 (%.2f, %.2f) 所在区域类型: %d", pt.x, pt.y, id);
         response->region_ids.push_back(id);
     }
 }

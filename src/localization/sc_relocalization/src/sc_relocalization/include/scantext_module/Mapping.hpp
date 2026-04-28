@@ -22,9 +22,12 @@ namespace scantext
         int index;
         double time;
         Eigen::Isometry3d pose;
+        std::string cloud_path;
+        std::string descriptor_cache_path;
         ScanContext::PointCloudType::Ptr cloud;
         ScanContext::SCDescriptor descriptor;
         ScanContext::RingKey ring_key;
+        ScanContext::CartDescriptor cart_descriptor;
     };
 
     /**
@@ -46,6 +49,7 @@ namespace scantext
         ~MappingCore() = default;
 
         void setConfig(const Config &config);
+        void setScanContextParams(const SCParams &params);
         Config getConfig() const { return config_; }
 
         /**

@@ -1,0 +1,36 @@
+rosbag2_bagfile_information:
+  version: 9
+  storage_identifier: mcap
+  duration:
+    nanoseconds: 348473095224
+  starting_time:
+    nanoseconds_since_epoch: 1773808175797947787
+  message_count: 73181
+  topics_with_message_count:
+    - topic_metadata:
+        name: /livox/lidar_192_168_1_163
+        type: livox_ros_driver2/msg/CustomMsg
+        serialization_format: cdr
+        offered_qos_profiles: "- history: 3\n  depth: 0\n  reliability: 1\n  durability: 2\n  deadline:\n    sec: 9223372036\n    nsec: 854775807\n  lifespan:\n    sec: 9223372036\n    nsec: 854775807\n  liveliness: 1\n  liveliness_lease_duration:\n    sec: 9223372036\n    nsec: 854775807\n  avoid_ros_namespace_conventions: false"
+        type_description_hash: RIHS01_2eb17e5e35bf5a2d6cd079f3c57f33abf95e5bf7d71b42cddc05daace73d815a
+      message_count: 3485
+    - topic_metadata:
+        name: /livox/imu_192_168_1_160
+        type: sensor_msgs/msg/Imu
+        serialization_format: cdr
+        offered_qos_profiles: "- history: 3\n  depth: 0\n  reliability: 1\n  durability: 2\n  deadline:\n    sec: 9223372036\n    nsec: 854775807\n  lifespan:\n    sec: 9223372036\n    nsec: 854775807\n  liveliness: 1\n  liveliness_lease_duration:\n    sec: 9223372036\n    nsec: 854775807\n  avoid_ros_namespace_conventions: false"
+        type_description_hash: RIHS01_7d9a00ff131080897a5ec7e26e315954b8eae3353c3f995c55faf71574000b5b
+      message_count: 69696
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - rosbag2_2026_03_18-12_29_35_0.mcap
+  files:
+    - path: rosbag2_2026_03_18-12_29_35_0.mcap
+      starting_time:
+        nanoseconds_since_epoch: 1773808175797947787
+      duration:
+        nanoseconds: 348473095224
+      message_count: 73181
+  custom_data: ~
+  ros_distro: jazzy

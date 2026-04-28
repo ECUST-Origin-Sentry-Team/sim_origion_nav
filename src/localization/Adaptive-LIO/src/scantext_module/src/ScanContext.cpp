@@ -1,5 +1,8 @@
 #include "scantext_module/ScanContext.hpp"
 
+#include <limits>
+#include <set>
+
 namespace scantext {
 
 ScanContext::ScanContext(const SCParams& params) : params_(params) {}
@@ -45,11 +48,112 @@ ScanContext::SCDescriptor ScanContext::makeScanContext(const PointCloudType& sca
 }
 
 ScanContext::RingKey ScanContext::makeRingKey(const SCDescriptor& sc) {
-    // RingKey is the mean of each row (ring)
-    // Actually, original paper uses L0 norm (occupancy) or average intensity. 
-    // Common implementation uses row averages of the height map.
-    Eigen::VectorXd ring_key = sc.rowwise().mean();
+    Eigen::VectorXd ring_key = Eigen::VectorXd::Zero(sc.rows());
+    constexpr double kEps = 1e-6;
+    for (int r = 0; r < sc.rows(); ++r) {
+        double sum = 0.0;
+        int cnt = 0;
+        for (int c = 0; c < sc.cols(); ++c) {
+            const double v = sc(r, c);
+            if (std::abs(v) > kEps) {
+                sum += v;
+                cnt++;
+            }
+        }
+        if (cnt > 0) {
+            ring_key[r] = sum / static_cast<double>(cnt);
+        }
+    }
     return ring_key;
+}
+
+ScanContext::SectorKey ScanContext::makeSectorKey(const SCDescriptor& sc) {
+    Eigen::VectorXd sector_key = Eigen::VectorXd::Zero(sc.cols());
+    constexpr double kEps = 1e-6;
+    for (int c = 0; c < sc.cols(); ++c) {
+        double sum = 0.0;
+        int cnt = 0;
+        for (int r = 0; r < sc.rows(); ++r) {
+            const double v = sc(r, c);
+            if (std::abs(v) > kEps) {
+                sum += v;
+                cnt++;
+            }
+        }
+        if (cnt > 0) {
+            sector_key[c] = sum / static_cast<double>(cnt);
+        }
+    }
+    return sector_key;
+}
+
+ScanContext::CartDescriptor ScanContext::makeCartContext(const PointCloudType& scan, double yaw_offset) {
+    const double x_unit = params_.cart_x_unit;
+    const double y_unit = params_.cart_y_unit;
+    const double x_max = params_.cart_x_max;
+    const double y_max = params_.cart_y_max;
+
+    const int num_x = std::max(1, static_cast<int>(std::round((2.0 * x_max) / x_unit)));
+    const int num_y = std::max(1, static_cast<int>(std::round((2.0 * y_max) / y_unit)));
+
+    CartDescriptor cc = Eigen::MatrixXd::Zero(num_x, num_y);
+
+    const double c = std::cos(yaw_offset);
+    const double s = std::sin(yaw_offset);
+
+    for (const auto& pt : scan.points) {
+        if (!std::isfinite(pt.x) || !std::isfinite(pt.y) || !std::isfinite(pt.z)) {
+            continue;
+        }
+
+        double x = static_cast<double>(pt.x);
+        double y = static_cast<double>(pt.y);
+        const double z = static_cast<double>(pt.z);
+
+        if (std::abs(yaw_offset) > 1e-9) {
+            const double xr = c * x - s * y;
+            const double yr = s * x + c * y;
+            x = xr;
+            y = yr;
+        }
+
+        if (!(x > -x_max && x < x_max && y > -y_max && y < y_max)) {
+            continue;
+        }
+
+        const double xs = (x >= 0.0 ? 1.0 : -1.0) * std::floor(std::abs(x) / x_unit) + std::floor(num_x / 2.0);
+        const double ys = (y >= 0.0 ? 1.0 : -1.0) * std::floor(std::abs(y) / y_unit) + std::floor(num_y / 2.0);
+
+        const int xi = static_cast<int>(xs);
+        const int yi = static_cast<int>(ys);
+        if (xi < 0 || xi >= num_x || yi < 0 || yi >= num_y) {
+            continue;
+        }
+
+        if (cc(xi, yi) < z) {
+            cc(xi, yi) = z;
+        }
+    }
+
+    return cc;
+}
+
+double ScanContext::distanceBtnCartContext(const CartDescriptor& cc1, const CartDescriptor& cc2) const {
+    if (cc1.rows() != cc2.rows() || cc1.cols() != cc2.cols()) {
+        return 1.0;
+    }
+
+    const Eigen::Map<const Eigen::VectorXd> v1(cc1.data(), cc1.size());
+    const Eigen::Map<const Eigen::VectorXd> v2(cc2.data(), cc2.size());
+
+    const double n1 = v1.norm();
+    const double n2 = v2.norm();
+    if (n1 < 1e-9 || n2 < 1e-9) {
+        return 1.0;
+    }
+
+    const double sim = std::clamp(v1.dot(v2) / (n1 * n2), -1.0, 1.0);
+    return 1.0 - sim;
 }
 
 ScanContext::SCDescriptor ScanContext::circshift(const SCDescriptor& sc, int shift) {
@@ -72,57 +176,34 @@ ScanContext::SCDescriptor ScanContext::circshift(const SCDescriptor& sc, int shi
 std::pair<double, int> ScanContext::distanceBtnScanContext(const SCDescriptor& sc1, const SCDescriptor& sc2) {
     int num_sector = params_.num_sector;
     int best_shift = 0;
-    double min_dist = 1.0; // Distance is cosine distance, so 1.0 is max (irrelevant)
+    double min_dist = std::numeric_limits<double>::max();
 
-    // We search for the best shift to align sc2 to sc1
-    // Cosine distance calculation
-    // A simple column-wise difference metric is often used
-    
-    // Using simple sum of absolute differences or cosine distance per column?
-    // The original paper suggests column-wise cosine distance.
-    
-    // Let's implement the standard approach:
-    // For each shift, calculate the sum of errors.
-    
-    min_dist = std::numeric_limits<double>::max();
+    int center_shift = 0;
+    int search_half = num_sector / 2;
+    if (params_.use_scpp) {
+        const auto sector1 = makeSectorKey(sc1);
+        const auto sector2 = makeSectorKey(sc2);
+        center_shift = fastAlignUsingSectorKey(sector1, sector2);
+        const int ratio_half = static_cast<int>(std::round(std::max(0.0, params_.scpp_search_ratio) * num_sector));
+        search_half = std::max(1, std::min(num_sector / 2, ratio_half));
+    }
 
-    for (int shift = 0; shift < num_sector; ++shift) {
-        SCDescriptor sc2_shifted = circshift(sc2, shift);
-        
-        // Compute distance (e.g., L1 difference)
-        // Or cosine distance.
-        // Let's use column-wise cosine distance sum, normalized.
-        
-        double dist = 0.0;
-        int valid_cols = 0;
-        
-        // A simple metric: Sum of L1 norms of columns, normalized?
-        // Fast implementation: Element-wise difference
-        // dist = (sc1 - sc2_shifted).norm() / sc1.norm(); // This is Frobenius norm based
-        
-        // Paper uses: 1 - mean( dot(c1, c2) / (|c1|*|c2|) )
-        
-        double sum_cos_sim = 0.0;
-        for (int c = 0; c < sc1.cols(); ++c) {
-            Eigen::VectorXd col1 = sc1.col(c);
-            Eigen::VectorXd col2 = sc2_shifted.col(c);
-            
-            double norm1 = col1.norm();
-            double norm2 = col2.norm();
-            
-            if (norm1 == 0 || norm2 == 0) {
-                // If one is empty, similarity is 0? Or skip?
-                // If both empty, similarity 1.
-                if (norm1 == 0 && norm2 == 0) sum_cos_sim += 1.0;
-                continue;
+    std::set<int> shifts;
+    if (params_.use_scpp) {
+        shifts.insert(center_shift);
+        for (int i = 1; i <= search_half; ++i) {
+            shifts.insert((center_shift - i + num_sector) % num_sector);
+            shifts.insert((center_shift + i) % num_sector);
+        }
+    } else {
+        for (int i = 0; i < num_sector; ++i) {
+            shifts.insert(i);
             }
-            
-            double cos_sim = col1.dot(col2) / (norm1 * norm2);
-            sum_cos_sim += cos_sim;
         }
         
-        double mean_cos_sim = sum_cos_sim / num_sector;
-        double current_dist = 1.0 - mean_cos_sim;
+    for (const int shift : shifts) {
+        SCDescriptor sc1_shifted = circshift(sc1, shift);
+        const double current_dist = distDirectSC(sc1_shifted, sc2);
         
         if (current_dist < min_dist) {
             min_dist = current_dist;
@@ -130,7 +211,67 @@ std::pair<double, int> ScanContext::distanceBtnScanContext(const SCDescriptor& s
         }
     }
 
+    if (!std::isfinite(min_dist)) {
+        min_dist = 1.0;
+    }
+
     return {min_dist, best_shift};
+}
+
+int ScanContext::fastAlignUsingSectorKey(const SectorKey& vkey_ref, const SectorKey& vkey_query) const {
+    const int cols = static_cast<int>(vkey_ref.size());
+    if (cols == 0 || vkey_query.size() != cols) {
+        return 0;
+    }
+
+    int best_shift = 0;
+    double min_norm = std::numeric_limits<double>::max();
+    for (int shift = 0; shift < cols; ++shift) {
+        double sum_sq = 0.0;
+        for (int c = 0; c < cols; ++c) {
+            const double a = vkey_ref[c];
+            const double b = vkey_query[(c - shift + cols) % cols];
+            const double d = a - b;
+            sum_sq += d * d;
+        }
+
+        const double diff_norm = std::sqrt(sum_sq);
+        if (diff_norm < min_norm) {
+            min_norm = diff_norm;
+            best_shift = shift;
+        }
+    }
+    return best_shift;
+}
+
+double ScanContext::distDirectSC(const SCDescriptor& sc1, const SCDescriptor& sc2) const {
+    if (sc1.rows() != sc2.rows() || sc1.cols() != sc2.cols()) {
+        return 1.0;
+    }
+
+    double sum_sector_similarity = 0.0;
+    int num_eff_cols = 0;
+    for (int c = 0; c < sc1.cols(); ++c) {
+        const auto col1 = sc1.col(c);
+        const auto col2 = sc2.col(c);
+
+        const double n1 = col1.norm();
+        const double n2 = col2.norm();
+        if (n1 < 1e-9 || n2 < 1e-9) {
+            continue;
+        }
+
+        const double cos_similarity = std::clamp(col1.dot(col2) / (n1 * n2), -1.0, 1.0);
+        sum_sector_similarity += cos_similarity;
+        num_eff_cols++;
+    }
+
+    if (num_eff_cols == 0) {
+        return 1.0;
+    }
+
+    const double sc_sim = sum_sector_similarity / static_cast<double>(num_eff_cols);
+    return 1.0 - sc_sim;
 }
 
 } // namespace scantext

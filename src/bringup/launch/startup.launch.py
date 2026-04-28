@@ -84,6 +84,12 @@ def generate_launch_description():
         )
     )
 
+    ada_lio = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            get_package_share_directory('adaptive_lio')+"/launch/run.launch.py"
+        )
+    )
+
     load_map_server = LoadComposableNodes(
         target_container='container',
         composable_node_descriptions=[
@@ -151,6 +157,18 @@ def generate_launch_description():
         )
     )
 
+    region_behavior = Node(
+        package="region_behavior",
+        executable="region_behavior_node",
+        namespace='',
+        output="screen",
+    )
+    sc_loc = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            get_package_share_directory('sc_relocalization')+"/launch/run.launch.py"        
+        )
+    )
+
     icp = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             get_package_share_directory('icp_registration')+'/launch/icp.launch.py'
@@ -161,8 +179,10 @@ def generate_launch_description():
         [
             #  rm_serial,
              pointlio,
-             container,
-             modify,
+            # ada_lio,
+            container,
+
+            modify,
             #gicp,      
              #lidar_transform,
             #  livox_ros_driver2,
@@ -170,8 +190,10 @@ def generate_launch_description():
              start_nav2_rviz,
              seg,
              load_map_server,
+            #  sc_loc,
              p_to_l,
              fake_baselink,
+            #  region_behavior,
             #  TimerAction(
             #     period=4.0,
             #     actions=[icp],

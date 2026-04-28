@@ -23,6 +23,9 @@ public:
         int ringkey_top_k = 10;     // KD-tree 取 topK (Optimized)
         int sc_top_k      = 10;     // SC 精匹配保留 topM
         int icp_top_k     = 3;      // 最后做 ICP 的候选数
+        bool use_cart_context = true;
+        double cart_weight = 0.20;
+        double min_candidate_separation = 10.0;
 
         double sc_dist_thresh = 0.5;      // SC 距离阈值（越小越像）
         double icp_fitness_thresh = 0.05; // ICP fitness 阈值 (Strict 0.05m)
@@ -30,6 +33,12 @@ public:
         // --- ICP params ---
         double icp_max_corr_dist = 2.0;
         int    icp_max_iter = 30;         // (Optimized <= 30)
+        int    gicp_num_threads = 4;
+        int    gicp_num_neighbors = 20;
+
+        // --- pose constraints ---
+        bool   use_4dof = true;           // xyz + yaw
+        bool   gravity_align = true;      // keep interface; currently aligns roll/pitch to gravity (zero rp)
 
         // --- local submap ---
         int    local_submap_kf_num = 10;   // 取候选 keyframe 前后 N 帧拼子图
@@ -52,6 +61,7 @@ public:
     ~RelocalizationCore() = default;
 
     void setConfig(const Config& config);
+    void setScanContextParams(const SCParams& params);
 
     // 一次性设置（离线加载地图）
     void setMap(const std::vector<std::shared_ptr<KeyFrame>>& keyframes);
@@ -86,6 +96,8 @@ private:
         int idx = -1;
         double rk_dist = 1e9;
         double sc_dist = 1e9;
+        double cart_dist = 1e9;
+        double match_dist = 1e9;
         int shift = 0;
         Eigen::Isometry3d init_pose = Eigen::Isometry3d::Identity();    // map_T_base init
         Eigen::Isometry3d refined_pose = Eigen::Isometry3d::Identity(); // map_T_base refined
@@ -129,6 +141,8 @@ private:
                 const Eigen::Isometry3d& init_map_T_base,
                 Eigen::Isometry3d& refined_map_T_base,
                 double& fitness) const;
+
+    Eigen::Isometry3d projectTo4DoF(const Eigen::Isometry3d& pose) const;
 };
 
 } // namespace scantext

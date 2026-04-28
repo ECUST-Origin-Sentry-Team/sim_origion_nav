@@ -8,12 +8,17 @@ preprocess:
   degenerate_window_num: 10
 
 common:
-  imu_topic: /livox/imu #/imu_raw   /gps/gtimu
-  lid_topic: /livox/lidar #/points_raw  /rslidar_points /velodyne_points
-  # imu_topic: /livox/imu_192_168_1_160 #/imu_raw   /gps/gtimu
-  # lid_topic: /livox/lidar_192_168_1_160 #/points_raw  /rslidar_points /velodyne_points
+  # imu_topic: /livox/imu #/imu_raw   /gps/gtimu
+  # lid_topic: /livox/lidar #/points_raw  /rslidar_points /velodyne_points
+  imu_topic: /livox/imu_192_168_1_160 #/imu_raw   /gps/gtimu
+  lid_topic: /livox/lidar_192_168_1_160 #/points_raw  /rslidar_points /velodyne_points
   aux_lidar_topic: /livox/lidar_192_168_1_163
   gnorm: 1 # 9.805    # 部分数据，加速度模长为1->9.805gnorm
+  # Fusion frame alignment
+  # Assume IMU frame == aft_mapped frame.
+  # Relative transform aft_mapped -> base_link: [x, y, z, roll, pitch, yaw] (m, rad)
+  fusion_aft_to_base_xyzrpy: [-0.04, -0.155, -0.33, 0, 0, 0]
+  fusion_base_link_frame: base_link
 
 mapping:
   extrinsic_est_en: true
@@ -38,7 +43,10 @@ map_options:
     radius_max: 1.2
     exponent: 1.0
 
-delay_time: 0.2
+delay_time: 0.05
+
+aux_lidar:
+  min_points_per_measurement: 1000
 
 odometry:
   surf_res: 0.5
@@ -80,10 +88,17 @@ odometry:
 cloud_pub:
   max_z_filter: 1.5 # the roof must be filtered
   min_z_filter: -1.0 
-  space_down_sample: 0.01 # should not larger than 0.05
+  space_down_sample: 0.05 # should not larger than 0.05
+  enable_body_filter: true
+  body_filter_x_min: -0.6 # 车体系盒滤波范围，可按车体前后尺寸调整
+  body_filter_x_max: 0.6
+  body_filter_y_min: -0.6
+  body_filter_y_max: 0.6
+  body_filter_z_min: -0.3
+  body_filter_z_max: 0.3
 
 mapping_module:
-  enable_mapping: true
+  enable_mapping: false
   keyframe_dist_thresh: 1.0
   keyframe_angle_thresh: 0.8
   map_save_path: "./map_scantext.pcd"
@@ -93,3 +108,9 @@ mapping_module:
     num_ring: 20
     num_sector: 60
     max_radius: 80.0
+    use_scpp: true
+    scpp_search_ratio: 0.1
+    cart_x_unit: 5.0
+    cart_y_unit: 2.0
+    cart_x_max: 100.0
+    cart_y_max: 40.0

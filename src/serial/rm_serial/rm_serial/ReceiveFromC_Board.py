@@ -273,13 +273,6 @@ class RNode(Node):
         adjust_time=current_time+rclpy.duration.Duration(seconds=offset)
         t = TransformStamped()
 
-        t.header.stamp = adjust_time.to_msg()
-        t.header.frame_id = 'base_link_fake'
-        t.child_frame_id = 'gimbal_link'
-
-        t.transform.translation.x = 0.0
-        t.transform.translation.y = 0.0
-        t.transform.translation.z = 0.0
 
         q = tf_transformations.quaternion_from_euler((pi/180)*self.gimbal_msg.roll, (pi/180)*self.gimbal_msg.pitch, (pi/180)*self.gimbal_msg.yaw)
         t.transform.rotation.x = q[0]
