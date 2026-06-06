@@ -27,6 +27,8 @@ namespace zjloc
 
           index_frame = 1;
           points_world.reset(new pcl::PointCloud<pcl::PointXYZI>());
+          points_world->points.reserve(20000);
+          all_state_frame.reserve(3);
      }
 
      lidarodom_m::~lidarodom_m()
@@ -89,11 +91,18 @@ namespace zjloc
                OPTION_CLAUSE(odometry_node, options_, beta_location_consistency, double);
                OPTION_CLAUSE(odometry_node, options_, beta_orientation_consistency, double);
                OPTION_CLAUSE(odometry_node, options_, beta_constant_velocity, double);
-               OPTION_CLAUSE(odometry_node, options_, beta_small_velocity, double);
-               OPTION_CLAUSE(odometry_node, options_, thres_orientation_norm, double);
-               OPTION_CLAUSE(odometry_node, options_, thres_translation_norm, double);
-               OPTION_CLAUSE(odometry_node, options_, satu_acc, double);
-               OPTION_CLAUSE(odometry_node, options_, satu_gyro, double);
+                OPTION_CLAUSE(odometry_node, options_, beta_small_velocity, double);
+                OPTION_CLAUSE(odometry_node, options_, thres_orientation_norm, double);
+                OPTION_CLAUSE(odometry_node, options_, thres_translation_norm, double);
+                OPTION_CLAUSE(odometry_node, options_, fov_segment_stride, int);
+                OPTION_CLAUSE(odometry_node, options_, sparse_scene_distance_thresh, double);
+                OPTION_CLAUSE(odometry_node, options_, sparse_nearest_neighbor_ratio, double);
+                OPTION_CLAUSE(odometry_node, options_, sparse_min_planarity, double);
+                OPTION_CLAUSE(odometry_node, options_, map_update_translation_trigger, double);
+                OPTION_CLAUSE(odometry_node, options_, map_update_rotation_trigger, double);
+                OPTION_CLAUSE(odometry_node, options_, map_update_max_skip_frames, int);
+                OPTION_CLAUSE(odometry_node, options_, satu_acc, double);
+                OPTION_CLAUSE(odometry_node, options_, satu_gyro, double);
           }
           if (node["cloud_pub"])
           {
@@ -219,13 +228,13 @@ namespace zjloc
           return true;
      }
 
-     void lidarodom_m::pushData(std::vector<point3D> msg, std::pair<double, double> data, bool is_aux)
+     void lidarodom_m::pushData(std::vector<point3D> &&msg, std::pair<double, double> data, bool is_aux)
      {
           if (is_aux)
           // 副雷达
           {
                std::lock_guard<std::mutex> lk(mtx_aux_buf);
-               aux_lidar_buffer_.push_back(msg);
+               aux_lidar_buffer_.push_back(std::move(msg));
                aux_lidar_time_buffer_.push_back(data);
                cond.notify_one();
           }
@@ -239,7 +248,7 @@ namespace zjloc
                }
 
                mtx_buf.lock();
-               lidar_buffer_.push_back(msg);
+               lidar_buffer_.push_back(std::move(msg));
                time_buffer_.push_back(data);
                last_timestamp_lidar_ = data.first;
                mtx_buf.unlock();
@@ -301,7 +310,12 @@ namespace zjloc
 
      void lidarodom_m::ProcessMeasurements(MeasureGroup &meas)
      {
-          measures_ = meas;
+          measures_.lidar_begin_time_ = meas.lidar_begin_time_;
+          measures_.lidar_end_time_ = meas.lidar_end_time_;
+          measures_.imu_ = meas.imu_;
+          measures_.imu_cont.clear();
+          measures_.lidar_.clear();
+          measures_.aux_lidar_.clear();
 
           if (imu_need_init_)
           {
@@ -310,8 +324,11 @@ namespace zjloc
           }
 
           // std::cout << ANSI_DELETE_LAST_LINE;
-          std::cout << ANSI_COLOR_GREEN << "============== process frame: "
-                    << index_frame << ANSI_COLOR_RESET << std::endl;
+          if (options_.log_print)
+          {
+               std::cout << ANSI_COLOR_GREEN << "============== process frame: "
+                         << index_frame << ANSI_COLOR_RESET << std::endl;
+          }
           imu_states_.clear(); //   need clear here
 
           // 利用IMU数据进行状态预测
@@ -323,14 +340,11 @@ namespace zjloc
                                          { stateInitialization(); },
                                          "state init");
 
-          std::vector<point3D> const_surf;
-          const_surf.insert(const_surf.end(), meas.lidar_.begin(), meas.lidar_.end());
-          // const_surf.assign(meas.lidar_.begin(), meas.lidar_.end());
-          std::vector<point3D> const_surf_aux;
-          const_surf_aux.insert(const_surf_aux.end(), meas.aux_lidar_.begin(), meas.aux_lidar_.end());
+          std::vector<point3D> const_surf = std::move(meas.lidar_);
+          std::vector<point3D> const_surf_aux = std::move(meas.aux_lidar_);
 
           cloudFrame *p_frame;
-          cloudFrame *p_frame_aux;
+          cloudFrame *p_frame_aux = nullptr;
 
           zjloc::common::Timer::Evaluate([&]()
                                          { p_frame = buildFrame(const_surf, current_state,
@@ -338,11 +352,14 @@ namespace zjloc
                                                                 meas.lidar_end_time_); },
                                          "build frame");
 
-          zjloc::common::Timer::Evaluate([&]()
-                                         { p_frame_aux = buildFrame(const_surf_aux, current_state,
-                                                                    meas.lidar_begin_time_,
-                                                                    meas.lidar_end_time_); },
-                                         "build frame");
+          if (!const_surf_aux.empty())
+          {
+               zjloc::common::Timer::Evaluate([&]()
+                                              { p_frame_aux = buildFrame(const_surf_aux, current_state,
+                                                                         meas.lidar_begin_time_,
+                                                                         meas.lidar_end_time_); },
+                                              "build frame");
+          }
 
           //   lio
           zjloc::common::Timer::Evaluate([&]()
@@ -386,21 +403,32 @@ namespace zjloc
                } },
                                          "pub cloud");
 
+          delete p_frame->p_state;
           p_frame->p_state = new state(current_state, true);
           // all_cloud_frame.push_back(p_frame); //   TODO:     保存这个，特别费内存
           state *tmp_state = new state(current_state, true);
           all_state_frame.push_back(tmp_state);
-          current_state = new state(current_state, false);
+          while (all_state_frame.size() > 2)
+          {
+               delete all_state_frame.front();
+               all_state_frame.erase(all_state_frame.begin());
+          }
+          state *next_state = new state(current_state, false);
+          delete current_state;
+          current_state = next_state;
 
-          if (all_state_frame.size() > 2)
+          if (all_state_frame.size() > 1)
                cache_vel = (all_state_frame[all_state_frame.size() - 1]->translation - all_state_frame[all_state_frame.size() - 2]->translation) /
-                           (meas.lidar_end_time_ - meas.lidar_begin_time_);
+                            (meas.lidar_end_time_ - meas.lidar_begin_time_);
 
           index_frame++;
           p_frame->release();
-          p_frame_aux->release();
-          std::vector<point3D>().swap(meas.lidar_);
-          std::vector<point3D>().swap(const_surf);
+          delete p_frame;
+          if (p_frame_aux != nullptr)
+          {
+               p_frame_aux->release();
+               delete p_frame_aux;
+          }
      }
 
      void lidarodom_m::poseEstimation(cloudFrame *p_frame, cloudFrame *p_frame_aux)
@@ -413,17 +441,46 @@ namespace zjloc
                                               "optimize");
           }
 
-          bool add_points = true;
-          if (add_points)
+          const Eigen::Vector3d current_translation = current_state->translation;
+          const Eigen::Quaterniond current_rotation(current_state->rotation);
+          bool should_update_map = true;
+          if (index_frame > options_.init_num_frames && has_last_map_maintenance_pose_)
+          {
+               const double translation_delta = (current_translation - last_map_maintenance_translation_).norm();
+               const double rotation_delta = AngularDistance(current_rotation, last_map_maintenance_rotation_);
+               const bool moved_enough =
+                   translation_delta >= options_.map_update_translation_trigger ||
+                   rotation_delta >= options_.map_update_rotation_trigger;
+               const bool skipped_too_long =
+                   options_.map_update_max_skip_frames > 0 &&
+                   (index_frame - last_map_maintenance_frame_) >= options_.map_update_max_skip_frames;
+               should_update_map = moved_enough || skipped_too_long;
+          }
+
+          if (should_update_map)
           { //   update map here
+                zjloc::common::Timer::Evaluate([&]()
+                                               { map_incremental(p_frame, p_frame_aux, true); },
+                                               "map update");
+                has_last_map_maintenance_pose_ = true;
+                last_map_maintenance_translation_ = current_translation;
+                last_map_maintenance_rotation_ = current_rotation;
+                last_map_maintenance_frame_ = index_frame;
+          }
+          else
+          {
                zjloc::common::Timer::Evaluate([&]()
-                                              { map_incremental(p_frame, p_frame_aux); },
+                                              { map_incremental(p_frame, p_frame_aux, false); },
                                               "map update");
           }
 
-          zjloc::common::Timer::Evaluate([&]()
-                                         { lasermap_fov_segment(); },
-                                         "fov segment");
+          const bool stride_hit = options_.fov_segment_stride <= 1 || (index_frame % options_.fov_segment_stride) == 0;
+          if (should_update_map && (stride_hit || index_frame <= options_.init_num_frames))
+          {
+                zjloc::common::Timer::Evaluate([&]()
+                                               { lasermap_fov_segment(); },
+                                              "fov segment");
+          }
      }
 
      void lidarodom_m::optimize(cloudFrame *p_frame)
@@ -444,8 +501,7 @@ namespace zjloc
           {
                if (options_.log_print)
                     std::cout << "all_cloud_frame.size():" << all_state_frame.size() << ", " << p_frame->frame_id << std::endl;
-               // previous_state = all_cloud_frame[p_frame->frame_id - 2]->p_state;
-               previous_state = all_state_frame[p_frame->frame_id - 2];
+               previous_state = all_state_frame.back();
                previous_translation = previous_state->translation;
                previous_velocity = previous_state->translation - previous_state->translation_begin;
                previous_orientation = previous_state->rotation;
@@ -458,10 +514,11 @@ namespace zjloc
           }
 
           std::vector<point3D> surf_keypoints;
+          surf_keypoints.reserve(p_frame->point_surf.size());
           grid_sampling(p_frame->point_surf, surf_keypoints,
                         options_.sampling_rate * options_.surf_res);
 
-          std::mt19937_64 g;
+          thread_local std::mt19937_64 g;
           std::shuffle(surf_keypoints.begin(), surf_keypoints.end(), g);
 
           size_t num_size = p_frame->point_surf.size();
@@ -491,6 +548,12 @@ namespace zjloc
                }
           };
 
+          ceres::Solver::Options solver_options;
+          solver_options.max_num_iterations = 5;
+          solver_options.num_threads = 3;
+          solver_options.minimizer_progress_to_stdout = false;
+          solver_options.trust_region_strategy_type = ceres::TrustRegionStrategyType::LEVENBERG_MARQUARDT;
+
           for (int iter(0); iter < options_.max_num_iteration; iter++)
           {
                transformKeypoints(surf_keypoints);
@@ -517,13 +580,18 @@ namespace zjloc
                     break;
                }
 
-               std::vector<ceres::CostFunction *> surfFactor;
-               std::vector<Eigen::Vector3d> normalVec;
-               // addSurfCost(surfFactor, normalVec, surf_keypoints, p_frame);
-               addSurfCostFactor(surfFactor, normalVec, surf_keypoints, p_frame);
+                std::vector<ceres::CostFunction *> surfFactor;
+                std::vector<Eigen::Vector3d> normalVec;
+                surfFactor.reserve(options_.max_num_residuals);
+                normalVec.reserve(options_.max_num_residuals);
+                // addSurfCost(surfFactor, normalVec, surf_keypoints, p_frame);
+                addSurfCostFactor(surfFactor, normalVec, surf_keypoints, p_frame);
 
                //   TODO: 退化后，该如何处理
-               checkLocalizability(normalVec);
+               if (iter == 0)
+               {
+                    checkLocalizability(normalVec);
+               }
 
                int surf_num = 0;
                if (options_.log_print)
@@ -544,8 +612,8 @@ namespace zjloc
                     //      break;
                }
                //   release
-               std::vector<Eigen::Vector3d>().swap(normalVec);
-               std::vector<ceres::CostFunction *>().swap(surfFactor);
+               normalVec.clear();
+               surfFactor.clear();
 
                if (options_.icpmodel == IcpModel::CT_POINT_TO_PLANE)
                {
@@ -592,22 +660,9 @@ namespace zjloc
                     std::cout << "ERROR: " << ss_out.str();
                }
 
-               ceres::Solver::Options options;
-               options.max_num_iterations = 5;
-               options.num_threads = 3;
-               options.minimizer_progress_to_stdout = false;
-               options.trust_region_strategy_type = ceres::TrustRegionStrategyType::LEVENBERG_MARQUARDT;
+                ceres::Solver::Summary summary;
 
-               // ceres::Solver::Options options;
-               // options.linear_solver_type = ceres::DENSE_SCHUR;
-               // options.trust_region_strategy_type = ceres::DOGLEG;
-               // options.max_num_iterations = 10;
-               // options.minimizer_progress_to_stdout = false;
-               // options.num_threads = 6;
-
-               ceres::Solver::Summary summary;
-
-               ceres::Solve(options, &problem, &summary);
+                ceres::Solve(solver_options, &problem, &summary);
 
                if (!summary.IsSolutionUsable())
                {
@@ -788,10 +843,19 @@ namespace zjloc
                auto &keypoint = keypoints[k];
                auto &raw_point = keypoint.raw_point;
 
-               NeighborPoints vector_neighbors;
-               mmap->RadiusSearchInPlace(keypoint.point, vector_neighbors, raw_point.norm(),
-                                         options_.max_number_neighbors,
-                                         kThresholdCapacity);
+                const bool sparse_far_point = raw_point.norm() >= options_.sparse_scene_distance_thresh;
+                const int required_neighbors = sparse_far_point
+                                                   ? std::max(options_.num_closest_neighbors + 2,
+                                                              std::max(8, options_.min_number_neighbors / 2))
+                                                   : options_.min_number_neighbors;
+                const int max_neighbors = sparse_far_point
+                                              ? std::max(required_neighbors, std::max(10, options_.max_number_neighbors / 2))
+                                              : options_.max_number_neighbors;
+
+                NeighborPoints vector_neighbors;
+                mmap->RadiusSearchInPlace(keypoint.point, vector_neighbors, raw_point.norm(),
+                                          max_neighbors,
+                                          kThresholdCapacity);
 
                // std::vector<voxel> voxels;
                // auto vector_neighbors = searchNeighbors(voxel_map, keypoint.point,
@@ -803,21 +867,34 @@ namespace zjloc
                //                                             ? nullptr
                //                                             : &voxels);
 
-               if (vector_neighbors.size() < options_.min_number_neighbors)
-                    continue;
+                if (vector_neighbors.size() < required_neighbors)
+                     continue;
+
+                const double nearest_neighbor_limit =
+                    options_.max_dist_to_plane_icp * options_.sparse_nearest_neighbor_ratio;
+                if ((vector_neighbors[0] - keypoint.point).squaredNorm() >
+                    nearest_neighbor_limit * nearest_neighbor_limit)
+                {
+                     continue;
+                }
 
                double weight;
 
-               Eigen::Vector3d location = TIL_ * raw_point;
+                Eigen::Vector3d location = TIL_ * raw_point;
 
-               auto neighborhood = estimatePointNeighborhood(vector_neighbors, location /*raw_point*/, weight);
+                auto neighborhood = estimatePointNeighborhood(vector_neighbors, location /*raw_point*/, weight);
 
-               weight = lambda_weight * weight + lambda_neighborhood *
-                                                     std::exp(-(vector_neighbors[0] -
-                                                                keypoint.point)
-                                                                   .norm() /
-                                                              (kMaxPointToPlane *
-                                                               options_.min_number_neighbors));
+                if (neighborhood.a2D < options_.sparse_min_planarity)
+                {
+                     continue;
+                }
+
+                weight = lambda_weight * weight + lambda_neighborhood *
+                                                      std::exp(-(vector_neighbors[0] -
+                                                                 keypoint.point)
+                                                                    .norm() /
+                                                               (kMaxPointToPlane *
+                                                                required_neighbors));
 
                double point_to_plane_dist;
                std::set<voxel> neighbor_voxels;
@@ -911,34 +988,52 @@ namespace zjloc
 
           for (int k = 0; k < num; k++)
           {
-               auto &keypoint = keypoints[k];
-               auto &raw_point = keypoint.raw_point;
+                auto &keypoint = keypoints[k];
+                auto &raw_point = keypoint.raw_point;
 
-               std::vector<voxel> voxels;
-               auto vector_neighbors = searchNeighbors(voxel_map, keypoint.point,
-                                                       nb_voxels_visited,
-                                                       options_.size_voxel_map,
-                                                       options_.max_number_neighbors,
-                                                       kThresholdCapacity,
-                                                       options_.estimate_normal_from_neighborhood
-                                                           ? nullptr
-                                                           : &voxels);
+                const bool sparse_far_point = raw_point.norm() >= options_.sparse_scene_distance_thresh;
+                const int required_neighbors = sparse_far_point
+                                                   ? std::max(options_.num_closest_neighbors + 2,
+                                                              std::max(8, options_.min_number_neighbors / 2))
+                                                   : options_.min_number_neighbors;
+                const int max_neighbors = sparse_far_point
+                                              ? std::max(required_neighbors, std::max(10, options_.max_number_neighbors / 2))
+                                              : options_.max_number_neighbors;
+                const double nearest_neighbor_limit =
+                    options_.max_dist_to_plane_icp * options_.sparse_nearest_neighbor_ratio;
+                const double max_neighbor_sq_distance = nearest_neighbor_limit * nearest_neighbor_limit;
 
-               if (vector_neighbors.size() < options_.min_number_neighbors)
-                    continue;
+                std::vector<voxel> voxels;
+                auto vector_neighbors = searchNeighbors(voxel_map, keypoint.point,
+                                                        nb_voxels_visited,
+                                                        options_.size_voxel_map,
+                                                        max_neighbors,
+                                                        kThresholdCapacity,
+                                                        options_.estimate_normal_from_neighborhood
+                                                            ? nullptr
+                                                            : &voxels,
+                                                        max_neighbor_sq_distance);
 
-               double weight;
+                if (vector_neighbors.size() < required_neighbors)
+                     continue;
 
-               Eigen::Vector3d location = TIL_ * raw_point;
+                double weight;
 
-               auto neighborhood = estimatePointNeighborhood(vector_neighbors, location /*raw_point*/, weight);
+                Eigen::Vector3d location = TIL_ * raw_point;
 
-               weight = lambda_weight * weight + lambda_neighborhood *
-                                                     std::exp(-(vector_neighbors[0] -
-                                                                keypoint.point)
-                                                                   .norm() /
-                                                              (kMaxPointToPlane *
-                                                               options_.min_number_neighbors));
+                auto neighborhood = estimatePointNeighborhood(vector_neighbors, location /*raw_point*/, weight);
+
+                if (neighborhood.a2D < options_.sparse_min_planarity)
+                {
+                     continue;
+                }
+
+                weight = lambda_weight * weight + lambda_neighborhood *
+                                                      std::exp(-(vector_neighbors[0] -
+                                                                 keypoint.point)
+                                                                    .norm() /
+                                                               (kMaxPointToPlane *
+                                                                required_neighbors));
 
                double point_to_plane_dist;
                std::set<voxel> neighbor_voxels;
@@ -1011,7 +1106,7 @@ namespace zjloc
      lidarodom_m::searchNeighbors(const voxelHashMap &map, const Eigen::Vector3d &point,
                                   int nb_voxels_visited, double size_voxel_map,
                                   int max_num_neighbors, int threshold_voxel_capacity,
-                                  std::vector<voxel> *voxels)
+                                  std::vector<voxel> *voxels, double max_sq_distance)
      {
 
           if (voxels != nullptr)
@@ -1043,7 +1138,11 @@ namespace zjloc
                               for (int i(0); i < voxel_block.NumPoints(); ++i)
                               {
                                    auto &neighbor = voxel_block.points[i];
-                                   double distance = (neighbor - point).norm();
+                                   double distance = (neighbor - point).squaredNorm();
+                                   if (max_sq_distance > 0.0 && distance > max_sq_distance)
+                                   {
+                                        continue;
+                                   }
                                    if (priority_queue.size() == max_num_neighbors)
                                    {
                                         if (distance < std::get<0>(priority_queue.top()))
@@ -1137,69 +1236,21 @@ namespace zjloc
           pcl_points->points.push_back(cloudTemp);
      }
 
-     void lidarodom_m::map_incremental(cloudFrame *p_frame, cloudFrame *p_frame_aux, int min_num_points)
+     void lidarodom_m::map_incremental(cloudFrame *p_frame, cloudFrame *p_frame_aux, bool update_map, int min_num_points)
      {
           //   only surf
-          Eigen::Matrix3d R;
-          Eigen::Vector3d t;
-
-          Eigen::Quaterniond end_quat = p_frame->p_state->rotation;
-          Eigen::Quaterniond begin_quat = p_frame->p_state->rotation_begin;
-          Eigen::Vector3d end_t = p_frame->p_state->translation;
-          Eigen::Vector3d begin_t = p_frame->p_state->translation_begin;
+          const size_t aux_point_count = p_frame_aux == nullptr ? 0 : p_frame_aux->point_surf.size();
           points_world->points.reserve(
-              p_frame->point_surf.size() +
-              p_frame_aux->point_surf.size());
+              p_frame->point_surf.size() + aux_point_count);
           for (auto &point : p_frame->point_surf)
           {
+               if (update_map)
                {
-                    if (options_.point_to_plane_with_distortion ||
-                        options_.icpmodel == IcpModel::CT_POINT_TO_PLANE)
-                    {
-                         double alpha_time = point.alpha_time;
+                    addPointToMap(voxel_map, point.point, point.intensity,
+                                  options_.size_voxel_map, options_.max_num_points_in_voxel,
+                                  options_.min_distance_points, min_num_points, p_frame);
 
-                         Eigen::Quaterniond q = begin_quat.slerp(alpha_time, end_quat);
-                         q.normalize();
-                         R = q.toRotationMatrix();
-                         t = (1.0 - alpha_time) * begin_t + alpha_time * end_t;
-                    }
-                    else
-                    {
-                         R = end_quat.normalized().toRotationMatrix();
-                         t = end_t;
-                    }
-                    point.point = R * (TIL_ * point.raw_point) + t;
-               }
-               addPointToMap(voxel_map, point.point, point.intensity,
-                             options_.size_voxel_map, options_.max_num_points_in_voxel,
-                             options_.min_distance_points, min_num_points, p_frame);
-
-               mmap->InsertPoint(point);
-               auto &p = points_world->points.emplace_back();
-               p.x = point.point.x();
-               p.y = point.point.y();
-               p.z = point.point.z();
-               p.intensity = point.intensity;
-          }
-          for (auto &point : p_frame_aux->point_surf)
-          {
-               {
-                    if (options_.point_to_plane_with_distortion ||
-                        options_.icpmodel == IcpModel::CT_POINT_TO_PLANE)
-                    {
-                         double alpha_time = point.alpha_time;
-
-                         Eigen::Quaterniond q = begin_quat.slerp(alpha_time, end_quat);
-                         q.normalize();
-                         R = q.toRotationMatrix();
-                         t = (1.0 - alpha_time) * begin_t + alpha_time * end_t;
-                    }
-                    else
-                    {
-                         R = end_quat.normalized().toRotationMatrix();
-                         t = end_t;
-                    }
-                    point.point = R * (TIL_ * point.raw_point) + t;
+                    mmap->InsertPoint(point);
                }
                auto &p = points_world->points.emplace_back();
                p.x = point.point.x();
@@ -1207,75 +1258,101 @@ namespace zjloc
                p.z = point.point.z();
                p.intensity = point.intensity;
           }
+          if (p_frame_aux != nullptr)
           {
-
-               pcl::PassThrough<pcl::PointXYZI> pass;
-               pass.setInputCloud(points_world);
-               pass.setFilterFieldName("z");
-               pass.setFilterLimits(cloud_pub_options.min_z_filter, cloud_pub_options.max_z_filter);
-               pass.filter(*points_world);
-
-               if (cloud_pub_options.enable_body_filter)
+               for (auto &point : p_frame_aux->point_surf)
                {
-                    const Eigen::Matrix3d body_to_world_rot = end_quat.normalized().toRotationMatrix();
-                    const Eigen::Matrix3f world_to_body_rot = body_to_world_rot.transpose().cast<float>();
-                    const Eigen::Vector3f world_to_body_trans =
-                        (-body_to_world_rot.transpose() * end_t).cast<float>();
-
-                    Eigen::Affine3f world_to_body = Eigen::Affine3f::Identity();
-                    world_to_body.linear() = world_to_body_rot;
-                    world_to_body.translation() = world_to_body_trans;
-
-                    pcl::CropBox<pcl::PointXYZI> crop;
-                    crop.setInputCloud(points_world);
-                    crop.setTransform(world_to_body);
-                    crop.setMin(Eigen::Vector4f(cloud_pub_options.body_filter_x_min,
-                                                cloud_pub_options.body_filter_y_min,
-                                                cloud_pub_options.body_filter_z_min,
-                                                1.0f));
-                    crop.setMax(Eigen::Vector4f(cloud_pub_options.body_filter_x_max,
-                                                cloud_pub_options.body_filter_y_max,
-                                                cloud_pub_options.body_filter_z_max,
-                                                1.0f));
-                    crop.setNegative(true);
-                    crop.filter(*points_world);
-               }
-
-               pcl::VoxelGrid<pcl::PointXYZI> vg;
-               vg.setInputCloud(points_world);
-               vg.setLeafSize(cloud_pub_options.space_down_sample, cloud_pub_options.space_down_sample, cloud_pub_options.space_down_sample);
-
-               pcl::PointCloud<pcl::PointXYZI>::Ptr down(new pcl::PointCloud<pcl::PointXYZI>);
-               vg.filter(*down);
-               std::string laser_topic = "laser";
-                
-               pub_cloud_to_ros(laser_topic, down, p_frame->time_frame_end);
-
-               if (pub_scantext_data)
-               {
-                    SE3 pose_of_lo_ = SE3(current_state->rotation, current_state->translation);
-                    pub_scantext_data(points_world, pose_of_lo_, p_frame->time_frame_end);
+                    auto &p = points_world->points.emplace_back();
+                    p.x = point.point.x();
+                    p.y = point.point.y();
+                    p.z = point.point.z();
+                    p.intensity = point.intensity;
                }
           }
+          publishFrameProducts(SE3(current_state->rotation, current_state->translation), p_frame->time_frame_end);
           points_world->clear();
+     }
+
+     void lidarodom_m::publishFrameProducts(const SE3 &pose_of_lo, double stamp)
+     {
+          pcl::PassThrough<pcl::PointXYZI> pass;
+          pass.setInputCloud(points_world);
+          pass.setFilterFieldName("z");
+          pass.setFilterLimits(cloud_pub_options.min_z_filter, cloud_pub_options.max_z_filter);
+          pass.filter(*points_world);
+
+          if (cloud_pub_options.enable_body_filter)
+          {
+               const Eigen::Matrix3d body_to_world_rot = pose_of_lo.rotationMatrix();
+               const Eigen::Matrix3f world_to_body_rot = body_to_world_rot.transpose().cast<float>();
+               const Eigen::Vector3f world_to_body_trans =
+                   (-body_to_world_rot.transpose() * pose_of_lo.translation()).cast<float>();
+
+               Eigen::Affine3f world_to_body = Eigen::Affine3f::Identity();
+               world_to_body.linear() = world_to_body_rot;
+               world_to_body.translation() = world_to_body_trans;
+
+               pcl::CropBox<pcl::PointXYZI> crop;
+               crop.setInputCloud(points_world);
+               crop.setTransform(world_to_body);
+               crop.setMin(Eigen::Vector4f(cloud_pub_options.body_filter_x_min,
+                                           cloud_pub_options.body_filter_y_min,
+                                           cloud_pub_options.body_filter_z_min,
+                                           1.0f));
+               crop.setMax(Eigen::Vector4f(cloud_pub_options.body_filter_x_max,
+                                           cloud_pub_options.body_filter_y_max,
+                                           cloud_pub_options.body_filter_z_max,
+                                           1.0f));
+               crop.setNegative(true);
+               crop.filter(*points_world);
+          }
+
+          CloudPtr down(new pcl::PointCloud<pcl::PointXYZI>);
+          pcl::VoxelGrid<pcl::PointXYZI> vg;
+          vg.setInputCloud(points_world);
+          vg.setLeafSize(cloud_pub_options.space_down_sample,
+                         cloud_pub_options.space_down_sample,
+                         cloud_pub_options.space_down_sample);
+          vg.filter(*down);
+
+          if (pub_cloud_to_ros)
+          {
+               std::string laser_topic = "laser";
+               pub_cloud_to_ros(laser_topic, down, stamp);
+          }
+
+          if (pub_scantext_data)
+          {
+               pub_scantext_data(points_world, pose_of_lo, stamp);
+          }
      }
 
      void lidarodom_m::lasermap_fov_segment()
      {
           //   use predict pose here
           Eigen::Vector3d location = current_state->translation;
-          // std::vector<voxel> voxels_to_erase;
-          // for (auto &pair : voxel_map)
-          // {
-          //      Eigen::Vector3d pt = pair.second.points[0];
-          //      if ((pt - location).squaredNorm() > (options_.max_distance * options_.max_distance))
-          //      {
-          //           voxels_to_erase.push_back(pair.first);
-          //      }
-          // }
-          // for (auto &vox : voxels_to_erase)
-          //      voxel_map.erase(vox);
-          // std::vector<voxel>().swap(voxels_to_erase);
+          const double max_distance_sq = options_.max_distance * options_.max_distance;
+          std::vector<voxel> voxels_to_erase;
+          voxels_to_erase.reserve(voxel_map.size() / 8 + 1);
+          for (const auto &pair : voxel_map)
+          {
+               if (pair.second.points.empty())
+               {
+                    voxels_to_erase.push_back(pair.first);
+                    continue;
+               }
+
+               const Eigen::Vector3d &pt = pair.second.points.front();
+               if ((pt - location).squaredNorm() > max_distance_sq)
+               {
+                    voxels_to_erase.push_back(pair.first);
+               }
+          }
+
+          for (const auto &vox : voxels_to_erase)
+          {
+               voxel_map.erase(vox);
+          }
 
           mmap->RemoveElementsFarFromLocation(location, options_.max_distance);
      }
@@ -1300,7 +1377,7 @@ namespace zjloc
                               cur_state->rotation, cur_state->translation_begin, cur_state->translation,
                               R_imu_lidar, t_imu_lidar);
 
-          cloudFrame *p_frame = new cloudFrame(frame_surf, const_surf, cur_state);
+          cloudFrame *p_frame = new cloudFrame(std::move(frame_surf), std::move(const_surf), cur_state);
 
           p_frame->time_frame_begin = timestamp_begin;
           p_frame->time_frame_end = timestamp_end;
@@ -1409,7 +1486,7 @@ namespace zjloc
 
                MeasureGroup meas;
 
-               meas.lidar_ = lidar_buffer_.front();
+               meas.lidar_ = std::move(lidar_buffer_.front());
                meas.lidar_begin_time_ = time_buffer_.front().first;
                meas.lidar_end_time_ = meas.lidar_begin_time_ + time_buffer_.front().second;
                lidar_buffer_.pop_front();
@@ -1499,7 +1576,7 @@ namespace zjloc
                      meas.imu_.push_back(imu_buffer_.front()); //   added for Interp
                 }
 
-                measurements.push_back(meas);
+                measurements.emplace_back(std::move(meas));
           }
      }
 
@@ -1582,6 +1659,17 @@ namespace zjloc
                // options.update_bias_acce_ = false;
                // options.update_bias_gyro_ = false;
                eskf_.SetInitialConditions(options, imu_init_.GetInitBg(), imu_init_.GetInitBa(), imu_init_.GetGravity());
+               if (!measures_.imu_.empty())
+               {
+                    const IMUPtr &last_init_imu = measures_.imu_.back();
+                    eskf_.SetInitialTime(last_init_imu->timestamp_);
+                    last_imu_ = last_init_imu;
+               }
+               else
+               {
+                    eskf_.SetInitialTime(measures_.lidar_end_time_);
+                    last_imu_ = nullptr;
+               }
                imu_need_init_ = false;
                RIG_ = SO3(g2R(imu_init_.GetMeanAcc()));
 

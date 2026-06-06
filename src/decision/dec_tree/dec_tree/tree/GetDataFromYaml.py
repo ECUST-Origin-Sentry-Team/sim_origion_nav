@@ -31,13 +31,13 @@ class GetDataFromYaml(py_trees.behaviour.Behaviour):
             self.open_yaml = True
 
             try:
-                global_config_path = get_package_share_directory("bringup") + "/params/global_config.yaml"
+                global_config_path = get_package_share_directory("dec_tree") + "/config/global_config.yaml"
                 with open(global_config_path, 'r') as file:
                     global_config = yaml.safe_load(file)
                 self_color = str(global_config.get("self_color", "red")).lower()
                 self.node.get_logger().info("global_config颜色读取成功: %s" % self_color)
             except:
-                self.node.get_logger().error("无法读取bringup/params/global_config.yaml中的self_color")
+                self.node.get_logger().error("无法读取dec_tree/config/global_config.yaml中的self_color")
                 return Status.FAILURE
 
 

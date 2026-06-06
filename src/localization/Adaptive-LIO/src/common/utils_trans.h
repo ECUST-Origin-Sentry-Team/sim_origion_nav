@@ -6,6 +6,6 @@
 
 #include "cloudMap.hpp"
 pcl::PointXYZI point3DtoPCL(point3D p);
-void point3DtoPCL(std::vector<point3D> v_point_temp, pcl::PointCloud<pcl::PointXYZI>::Ptr &p_cloud_temp, bool global = false);
+void point3DtoPCL(const std::vector<point3D> &v_point_temp, pcl::PointCloud<pcl::PointXYZI>::Ptr &p_cloud_temp, bool global = false);
 
 #endif

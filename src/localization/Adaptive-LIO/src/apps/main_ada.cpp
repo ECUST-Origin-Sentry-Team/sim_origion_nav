@@ -12,6 +12,7 @@
 
 // ros2 lib
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp/executors/multi_threaded_executor.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -40,6 +41,8 @@
 
 nav_msgs::msg::Path laserOdoPath;
 
+DEFINE_string(config_file, "", "Path to adaptive_lio config YAML.");
+
 zjloc::lidarodom_m *lio;
 zjloc::CloudConvert2 *convert;
 std::shared_ptr<scantext::MappingCore> scantext_mapping;
@@ -64,11 +67,13 @@ public:
     ImuOdomFusion(const nav_msgs::msg::Path &path_template,
                   const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr &odom_pub,
                   const rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr &path_pub,
+                  const rclcpp::Clock::SharedPtr &clock,
                   tf2_ros::TransformBroadcaster *tf_pub,
                   const std::string &map_frame,
                   const std::string &base_frame)
         : odom_pub_(odom_pub),
           path_pub_(path_pub),
+          clock_(clock),
           tf_pub_(tf_pub),
           map_frame_(map_frame),
           base_frame_(base_frame),
@@ -114,6 +119,19 @@ public:
     {
         std::lock_guard<std::mutex> lk(mtx_);
         base_link_frame_ = base_link_frame;
+    }
+
+    void SetTfRestampToNow(bool enabled)
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        restamp_tf_to_now_ = enabled;
+    }
+
+    void SetMaxPathPoses(size_t max_path_poses)
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        max_path_poses_ = max_path_poses;
+        TrimPathLocked();
     }
 
     void OnLioMeasurement(const SE3 &pose, double stamp)
@@ -511,8 +529,15 @@ private:
 
         if (tf_pub_)
         {
+            auto tf_stamp = odom.header.stamp;
+            if (restamp_tf_to_now_ && clock_)
+            {
+                tf_stamp = get_ros_time(clock_->now().seconds());
+            }
+
             geometry_msgs::msg::TransformStamped tf;
             tf.header = odom.header;
+            tf.header.stamp = tf_stamp;
             tf.child_frame_id = base_frame_;
             tf.transform.translation.x = pos.x();
             tf.transform.translation.y = pos.y();
@@ -520,7 +545,7 @@ private:
             tf.transform.rotation = odom.pose.pose.orientation;
 
             geometry_msgs::msg::TransformStamped tf_base_link;
-            tf_base_link.header.stamp = odom.header.stamp;
+            tf_base_link.header.stamp = tf_stamp;
             tf_base_link.header.frame_id = base_frame_;
             tf_base_link.child_frame_id = base_link_frame_;
             tf_base_link.transform.translation.x = t_aft_to_base_.x();
@@ -539,6 +564,10 @@ private:
     void AppendPathAndPublishLocked(double stamp)
     {
         PublishOdomLocked(stamp);
+        if (!path_pub_ || max_path_poses_ == 0 || path_pub_->get_subscription_count() == 0)
+        {
+            return;
+        }
         const Eigen::Quaterniond q = orientation_q_ * q_base_to_aft_;
 
         geometry_msgs::msg::PoseStamped ps;
@@ -554,6 +583,7 @@ private:
 
         fused_path_.header = ps.header;
         fused_path_.poses.push_back(ps);
+        TrimPathLocked();
         if (path_pub_)
         {
             path_pub_->publish(fused_path_);
@@ -564,10 +594,13 @@ private:
 
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
+    rclcpp::Clock::SharedPtr clock_;
     tf2_ros::TransformBroadcaster *tf_pub_ = nullptr;
     std::string map_frame_;
     std::string base_frame_;
     std::string base_link_frame_ = "base_link";
+    bool restamp_tf_to_now_ = true;
+    size_t max_path_poses_ = 2000;
 
     bool initialized_ = false;
     double last_imu_t_ = 0.0;
@@ -608,13 +641,24 @@ private:
     Eigen::Matrix3d vel_r_ = Eigen::Matrix3d::Identity();
     std::deque<HistoryEntry> history_;
     nav_msgs::msg::Path fused_path_;
+
+    void TrimPathLocked()
+    {
+        if (max_path_poses_ == 0 || fused_path_.poses.size() <= max_path_poses_)
+        {
+            return;
+        }
+
+        fused_path_.poses.erase(
+            fused_path_.poses.begin(),
+            fused_path_.poses.begin() + (fused_path_.poses.size() - max_path_poses_));
+    }
 };
 
 void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
 {
     // cloud_vec	一整帧 Livox 点云，被切成的多个子点云
     // cloud_out	第 i 个子点云（时间片）
-    std::cout << "livox_pcl_cbk called." << std::endl;
     std::vector<std::vector<point3D>> cloud_vec;
     std::vector<double> t_out;
     auto shared_msg = std::make_shared<const livox_ros_driver2::msg::CustomMsg>(*msg);
@@ -634,14 +678,13 @@ void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
             subSampleFrame(cloud_out, sample_size);
             std::shuffle(cloud_out.begin(), cloud_out.end(), g); },
                                        "laser ds");
-        lio->pushData(cloud_out, std::make_pair(msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9 + t_out[i] - t_out[0], t_out[0]), false);
+        lio->pushData(std::move(cloud_out), std::make_pair(msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9 + t_out[i] - t_out[0], t_out[0]), false);
         // pair<本段数据的绝对起始时间,数据持续时长>
     }
 }
 
 void aux_livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
 {
-    std::cout << "aux_livox_pcl_cbk called." << std::endl;
     std::vector<std::vector<point3D>> cloud_vec; // 附属雷达只存于第0个时间片
     std::vector<double> t_out;                   // 只有第0个时间片，代表总体的时间长度
     auto shared_msg = std::make_shared<const livox_ros_driver2::msg::CustomMsg>(*msg);
@@ -660,7 +703,7 @@ void aux_livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
         std::shuffle(cloud_out.begin(), cloud_out.end(), g); },
                                    "laser ds");
 
-    lio->pushData(cloud_out, std::make_pair(msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9, t_out[0]), true);
+    lio->pushData(std::move(cloud_out), std::make_pair(msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9, t_out[0]), true);
 }
 
 void standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -687,7 +730,7 @@ void standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
                                        "laser ds");
 
         // 在ROS2中使用的是nanoseconds().count()来获取时间戳
-        lio->pushData(cloud_out, std::make_pair(msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9 + t_out[i] - t_out[0], t_out[0]), false);
+        lio->pushData(std::move(cloud_out), std::make_pair(msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9 + t_out[i] - t_out[0], t_out[0]), false);
     }
 }
 
@@ -774,7 +817,9 @@ int main(int argc, char **argv)
     google::ParseCommandLineFlags(&gflags_argc, &gflags_argv_ptr, true);
     auto node = rclcpp::Node::make_shared("adaptive_lio_node");
 
-    std::string config_file = std::string(ROOT_DIR) + "config/mapping_m.yaml";
+    std::string config_file = FLAGS_config_file.empty()
+                                  ? std::string(ROOT_DIR) + "config/mapping_m.yaml"
+                                  : FLAGS_config_file;
     std::cout << ANSI_COLOR_GREEN << "config_file:" << config_file << ANSI_COLOR_RESET << std::endl;
 
     // Init Scantext Modules
@@ -841,19 +886,68 @@ int main(int argc, char **argv)
 
     auto yaml_cfg = YAML::LoadFile(config_file);
 
-    auto pub_scan = node->create_publisher<sensor_msgs::msg::PointCloud2>("/livox/scan", 10);
+    auto pub_scan = node->create_publisher<sensor_msgs::msg::PointCloud2>(
+        "/livox/scan", rclcpp::SensorDataQoS().keep_last(1));
+
+    struct ScanPublishTask
+    {
+        zjloc::CloudPtr cloud;
+        double time;
+    };
+
+    std::deque<ScanPublishTask> scan_publish_queue;
+    std::mutex scan_publish_queue_mutex;
+    std::condition_variable scan_publish_queue_cv;
+    bool stop_scan_publish_thread = false;
+    std::thread scan_publish_worker([&]()
+                                    {
+        while (true)
+        {
+            ScanPublishTask task;
+            {
+                std::unique_lock<std::mutex> lock(scan_publish_queue_mutex);
+                scan_publish_queue_cv.wait(lock, [&]() {
+                    return stop_scan_publish_thread || !scan_publish_queue.empty();
+                });
+
+                if (stop_scan_publish_thread && scan_publish_queue.empty())
+                {
+                    break;
+                }
+
+                task = std::move(scan_publish_queue.front());
+                scan_publish_queue.pop_front();
+            }
+
+            if (!task.cloud)
+            {
+                continue;
+            }
+
+            sensor_msgs::msg::PointCloud2 cloud_output;
+            pcl::toROSMsg(*task.cloud, cloud_output);
+            cloud_output.header.stamp = get_ros_time(task.time);
+            cloud_output.header.frame_id = "odom";
+            pub_scan->publish(cloud_output);
+        } });
+
     auto cloud_pub_func = std::function<bool(std::string & topic_name, zjloc::CloudPtr & cloud, double time)>(
         [&](std::string &topic_name, zjloc::CloudPtr &cloud, double time)
         {
-            sensor_msgs::msg::PointCloud2::SharedPtr cloud_ptr_output(new sensor_msgs::msg::PointCloud2());
-            pcl::toROSMsg(*cloud, *cloud_ptr_output);
+            if (topic_name != "laser" || pub_scan->get_subscription_count() == 0)
+            {
+                return true;
+            }
 
-            cloud_ptr_output->header.stamp = get_ros_time(time);
-            cloud_ptr_output->header.frame_id = "odom";
-            if (topic_name == "laser")
-                pub_scan->publish(*cloud_ptr_output);
-            else
-                ; // publisher_.publish(*cloud_ptr_output);
+            {
+                std::lock_guard<std::mutex> lock(scan_publish_queue_mutex);
+                if (scan_publish_queue.size() >= 2)
+                {
+                    scan_publish_queue.pop_front();
+                }
+                scan_publish_queue.push_back({cloud, time});
+            }
+            scan_publish_queue_cv.notify_one();
             return true;
         }
 
@@ -869,6 +963,7 @@ int main(int argc, char **argv)
         laserOdoPath,
         pubLaserOdometry,
         pubLaserOdometryPath,
+        node->get_clock(),
         g_tf_broadcaster.get(),
         "odom",
         "aft_mapped");
@@ -894,6 +989,14 @@ int main(int argc, char **argv)
                     Eigen::Vector3d(arr[0], arr[1], arr[2]),
                     Eigen::Vector3d(arr[3], arr[4], arr[5]));
             }
+        }
+        if (common["fusion_restamp_tf_to_now"])
+        {
+            imu_odom_fusion->SetTfRestampToNow(common["fusion_restamp_tf_to_now"].as<bool>());
+        }
+        if (common["fusion_max_path_poses"])
+        {
+            imu_odom_fusion->SetMaxPathPoses(common["fusion_max_path_poses"].as<size_t>());
         }
     }
 
@@ -929,14 +1032,19 @@ int main(int argc, char **argv)
         double time;
     };
 
+    const bool scantext_enabled = scantext_mapping && scantext_mapping->getConfig().enable_mapping;
+
     std::queue<ScantextTask> scantext_queue;
     std::mutex scantext_queue_mutex;
     std::condition_variable scantext_queue_cv;
     bool stop_scantext_thread = false;
+    std::thread scantext_worker;
 
     // Consumer thread function
-    std::thread scantext_worker([&]()
-                                {
+    if (scantext_enabled)
+    {
+        scantext_worker = std::thread([&]()
+                                      {
     while (!stop_scantext_thread) {
         ScantextTask task;
         {
@@ -965,6 +1073,7 @@ int main(int argc, char **argv)
             // }
         }
     } });
+    }
 
     Eigen::Isometry3d last_sc_pose = Eigen::Isometry3d::Identity();
     double last_sc_time = 0.0;
@@ -978,8 +1087,8 @@ int main(int argc, char **argv)
                 const SE3 &pose,
                 double time) -> bool
             {
-                if (!scantext_mapping || !points_world)
-                    return false;
+                if (!scantext_mapping || !points_world || !scantext_mapping->getConfig().enable_mapping)
+                    return true;
 
                 // --- pose -> Eigen ---
                 Eigen::Isometry3d eigen_pose = Eigen::Isometry3d::Identity();
@@ -1096,7 +1205,10 @@ int main(int argc, char **argv)
     lio->setFunc(cloud_pub_func);
     lio->setFunc(pose_pub_func);
     lio->setFunc(data_pub_func);
-    lio->setFunc(scantext_cbk);
+    if (scantext_enabled)
+    {
+        lio->setFunc(scantext_cbk);
+    }
 
     convert = new zjloc::CloudConvert2;
     convert->LoadFromYAML(config_file);
@@ -1109,19 +1221,26 @@ int main(int argc, char **argv)
     std::string imu_topic = yaml_cfg["common"]["imu_topic"].as<std::string>();
     gnorm = yaml_cfg["common"]["gnorm"].as<double>();
 
+    auto sensor_callback_group = node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    rclcpp::SubscriptionOptions sensor_sub_options;
+    sensor_sub_options.callback_group = sensor_callback_group;
+
     // 创建订阅者
     std::shared_ptr<void> subLaserCloud =
         (convert->lidar_type_ == zjloc::CloudConvert2::LidarType::AVIA)
-            ? std::static_pointer_cast<void>(node->create_subscription<livox_ros_driver2::msg::CustomMsg>(laser_topic, 100, livox_pcl_cbk))
-            : std::static_pointer_cast<void>(node->create_subscription<sensor_msgs::msg::PointCloud2>(laser_topic, 100, standard_pcl_cbk));
+            ? std::static_pointer_cast<void>(node->create_subscription<livox_ros_driver2::msg::CustomMsg>(laser_topic, 100, livox_pcl_cbk, sensor_sub_options))
+            : std::static_pointer_cast<void>(node->create_subscription<sensor_msgs::msg::PointCloud2>(laser_topic, 100, standard_pcl_cbk, sensor_sub_options));
 
-    auto subAuxLaserCloud = node->create_subscription<livox_ros_driver2::msg::CustomMsg>(aux_laser_topic, 100, aux_livox_pcl_cbk);
+    auto subAuxLaserCloud = node->create_subscription<livox_ros_driver2::msg::CustomMsg>(aux_laser_topic, 100, aux_livox_pcl_cbk, sensor_sub_options);
 
-    auto sub_imu_ori = node->create_subscription<sensor_msgs::msg::Imu>(imu_topic, 500, imuHandler);
+    auto sub_imu_ori = node->create_subscription<sensor_msgs::msg::Imu>(imu_topic, 500, imuHandler, sensor_sub_options);
 
     std::thread measurement_process(&zjloc::lidarodom_m::run, lio);
-    
-    rclcpp::spin(node);
+
+    const size_t executor_threads = std::max<size_t>(2, std::min<size_t>(4, std::thread::hardware_concurrency()));
+    rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), executor_threads);
+    executor.add_node(node);
+    executor.spin();
 
     // Cleanup Scantext thread
     {
@@ -1132,7 +1251,18 @@ int main(int argc, char **argv)
     if (scantext_worker.joinable())
         scantext_worker.join();
 
-    rclcpp::shutdown();
+    {
+        std::lock_guard<std::mutex> lock(scan_publish_queue_mutex);
+        stop_scan_publish_thread = true;
+    }
+    scan_publish_queue_cv.notify_all();
+    if (scan_publish_worker.joinable())
+        scan_publish_worker.join();
+
+    if (rclcpp::ok())
+    {
+        rclcpp::shutdown();
+    }
 
     zjloc::common::Timer::PrintAll();
     zjloc::common::Timer::DumpIntoFile(DEBUG_FILE_DIR("log_time.txt"));

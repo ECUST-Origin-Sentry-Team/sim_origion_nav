@@ -10,8 +10,9 @@ pcl::PointXYZI point3DtoPCL(point3D p)
      return pt;
 }
 
-void point3DtoPCL(std::vector<point3D> v_point_temp, pcl::PointCloud<pcl::PointXYZI>::Ptr &p_cloud_temp, bool global)
+void point3DtoPCL(const std::vector<point3D> &v_point_temp, pcl::PointCloud<pcl::PointXYZI>::Ptr &p_cloud_temp, bool global)
 {
+     p_cloud_temp->points.reserve(p_cloud_temp->points.size() + v_point_temp.size());
      for (int i = 0; i < v_point_temp.size(); i++)
      {
           pcl::PointXYZI cloud_temp;

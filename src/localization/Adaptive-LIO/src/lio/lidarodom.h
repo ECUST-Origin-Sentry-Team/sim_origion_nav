@@ -64,6 +64,13 @@ namespace zjloc
 
           double thres_orientation_norm;
           double thres_translation_norm;
+          int fov_segment_stride = 2;
+          double sparse_scene_distance_thresh = 20.0;
+          double sparse_nearest_neighbor_ratio = 3.0;
+          double sparse_min_planarity = 0.15;
+          double map_update_translation_trigger = 0.15;
+          double map_update_rotation_trigger = 0.03;
+          int map_update_max_skip_frames = 3;
 
           double satu_acc;
           double satu_gyro;
@@ -92,7 +99,7 @@ namespace zjloc
 
           bool init(const std::string &config_yaml);
 
-          void pushData(std::vector<point3D>, std::pair<double, double> data,bool is_aux);
+          void pushData(std::vector<point3D> &&, std::pair<double, double> data,bool is_aux);
           void pushData(IMUPtr imu);
 
           void run();
@@ -135,7 +142,9 @@ namespace zjloc
 
           void lasermap_fov_segment();
 
-          void map_incremental(cloudFrame *p_frame, cloudFrame *p_frame_aux,int min_num_points = 0);
+          void map_incremental(cloudFrame *p_frame, cloudFrame *p_frame_aux, bool update_map, int min_num_points = 0);
+
+          void publishFrameProducts(const SE3 &pose_of_lo, double stamp);
 
           void addPointToMap(voxelHashMap &map, const Eigen::Vector3d &point,
                              const double &intensity, double voxel_size,
@@ -160,7 +169,8 @@ namespace zjloc
           std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>>
           searchNeighbors(const voxelHashMap &map, const Eigen::Vector3d &point,
                           int nb_voxels_visited, double size_voxel_map, int max_num_neighbors,
-                          int threshold_voxel_capacity = 1, std::vector<voxel> *voxels = nullptr);
+                          int threshold_voxel_capacity = 1, std::vector<voxel> *voxels = nullptr,
+                          double max_sq_distance = -1.0);
 
           inline Sophus::SO3d r2SO3(const Eigen::Vector3d r)
           {
@@ -231,6 +241,10 @@ namespace zjloc
           std::function<bool(const CloudPtr &cloud, const SE3 &pose, double time)> pub_scantext_data;
 
           pcl::PointCloud<pcl::PointXYZI>::Ptr points_world;
+          bool has_last_map_maintenance_pose_ = false;
+          Eigen::Vector3d last_map_maintenance_translation_ = Eigen::Vector3d::Zero();
+          Eigen::Quaterniond last_map_maintenance_rotation_ = Eigen::Quaterniond::Identity();
+          int last_map_maintenance_frame_ = 0;
      };
 }
 

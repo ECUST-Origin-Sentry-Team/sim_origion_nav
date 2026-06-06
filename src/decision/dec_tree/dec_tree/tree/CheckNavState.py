@@ -55,8 +55,7 @@ class CheckNavState(py_trees.behaviour.Behaviour):
                     self.nav.clearAllCostmaps()
                     self.blackboard.nav_status = NAV_STATUS.ERROR
         else:
-            self.blackboard.nav_status = NAV_STATUS.RUNNING
-
+            pass
 
         return Status.SUCCESS
     

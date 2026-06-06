@@ -13,6 +13,11 @@ class TopicToBlackboardNode(Node):
         super().__init__('topic_to_blackboard_node')
 
         self.blackboard = py_trees.blackboard.Client(name='topic_to_blackboard')
+        self.blackboard.register_key(
+            key='pitch',
+            access=py_trees.common.Access.WRITE
+        )
+        self.blackboard.pitch = False
 
         self.qos_profile = qos_profile or QoSProfile(depth=10)
 
@@ -35,6 +40,14 @@ class TopicToBlackboardNode(Node):
             default_value=GimbalCmd(),
             qos_profile=rclpy.qos.qos_profile_sensor_data
         )
+
+        # self.bind_topic_to_blackboard(
+        #     msg_type=FaceEnemyBase,
+        #     topic_name='/face_enemy_base',
+        #     key='face_enemy_base',
+        #     default_value=FaceEnemyBase(),
+        #     qos_profile=self.qos_profile
+        # )
 
         self.bind_topic_to_blackboard(
             msg_type=Int32,

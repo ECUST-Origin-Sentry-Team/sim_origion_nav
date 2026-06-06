@@ -90,7 +90,6 @@ class Switch(py_trees.composites.Composite):
             self.status = py_trees.common.Status.FAILURE
             yield self
             return
-        print(value)
         selected_child = self.cases.get(str(value), self.default_child)
 
         if selected_child is None:

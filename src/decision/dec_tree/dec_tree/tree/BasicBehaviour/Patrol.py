@@ -4,6 +4,7 @@ from py_trees.common import Status
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 import time
 import random
+import uuid
 from ..parameter import NAV_STATUS
 
 
@@ -11,18 +12,18 @@ from ..parameter import NAV_STATUS
 
 class Patrol(py_trees.behaviour.Behaviour):
     def __init__(self, name: str,  node:Node, nav: BasicNavigator, random=1, points_key=None):
-        super().__init__(name)
+        unique_name = f"{name}_{str(uuid.uuid4())[:8]}"
+        super().__init__(unique_name)
         self.yaml = self.attach_blackboard_client(namespace="yaml")
         self.points_key = points_key if points_key is not None else name
         self.yaml.register_key(self.points_key,py_trees.common.Access.READ)
-        # self.yaml.register_key("our_outpost",py_trees.common.Access.READ)
-        # self.yaml.register_key("our_color",py_trees.common.Access.READ)Unpack
-        # self.yaml.register_key("their_outpost",py_trees.common.Access.READ)
+
         self.blackboard = self.attach_blackboard_client()
         self.yaml.register_key('blood_limit',py_trees.common.Access.READ)
         self.yaml.register_key('blood_limit',py_trees.common.Access.WRITE)
         self.blackboard.register_key("goal",py_trees.common.Access.WRITE)
         self.blackboard.register_key("dec_now",py_trees.common.Access.WRITE)
+        self.blackboard.register_key("reach_now",py_trees.common.Access.WRITE)
         self.blackboard.register_key("nav_status",py_trees.common.Access.READ)
         self.blackboard.register_key("nav_status",py_trees.common.Access.WRITE)
         self.blackboard.register_key("Referee",py_trees.common.Access.READ)
@@ -51,10 +52,10 @@ class Patrol(py_trees.behaviour.Behaviour):
         if not self.points:
             self._load_points()
         self.blackboard.dec_now = self.name
+        self.blackboard.reach_now = ""
         if  self.random == 2 :
-            enemy_pos_attr = f"enemy_{self.points_key}_pos"
+            enemy_pos_attr = f"catch_{self.points_key}"
             enemy_pos = int(getattr(self.blackboard.Referee, enemy_pos_attr))
-            print((enemy_pos))
             self.point_pos_now = self.points[enemy_pos - 1] 
         else :
             self.point_pos_now = self.points[0]
@@ -108,7 +109,7 @@ class Patrol(py_trees.behaviour.Behaviour):
 
         # ---------------- START 若正在发布本节点导航点，继续导航 ----------------
         if self.blackboard.nav_status == NAV_STATUS.RUNNING:
-            self.node.get_logger().info("running")
+            self.node.get_logger().info(f"{self.name}: running")
             return Status.SUCCESS
         # ---------------- END 若正在发布本节点导航点，继续导航 ----------------
         
@@ -118,6 +119,7 @@ class Patrol(py_trees.behaviour.Behaviour):
 
 
         self.first_time_init  = False
+        self.blackboard.reach_now = self.name
 
 
 
@@ -141,10 +143,10 @@ class Patrol(py_trees.behaviour.Behaviour):
                 self.node.get_logger().info("%s: send goal x:%f y:%f" % (self.name, self.point_pos_now['x'], self.point_pos_now['y']))
             else:
                 self.node.get_logger().info("waiting ...")
-        # 正常到达目标后等待
+        # 正常到达目标后等待unique_name
         elif self.blackboard.nav_status == NAV_STATUS.SUCCEEDED :
             self.waiting = True
-            tmp = 0.1
+            tmp = 7.0
             self.wait_until = time.time() + tmp
     
         # 默认情况：发送当前目标点

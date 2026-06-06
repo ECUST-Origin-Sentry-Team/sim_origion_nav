@@ -10,8 +10,10 @@ from .tree.CheckNavState import CheckNavState
 from .tree.GetDataFromYaml import GetDataFromYaml
 from .tree.PubGoal import PubGoal
 from .tree.BasicBehaviour import Condition, IfThenElse, Patrol, Switch
+from .tree.PitchDec import PitchDec
 from .tree.Home import Home
-
+from std_msgs.msg import Bool, Int32, Float32
+from geometry_msgs.msg import Twist
 
 
 
@@ -129,7 +131,7 @@ def create_energy_tree(node, qos_profile, nav):
     )
 
     # 冲家
-    pilot_cmd_attack  = create_pilot_cmd_attack_subtree(node,qos_profile,nav)
+    rush_home_attack  = create_rush_home_attack_subtree(node,qos_profile,nav)
         
 
     # 堡垒回防 有能量情况下
@@ -152,7 +154,7 @@ def create_energy_tree(node, qos_profile, nav):
         goto_home,
 
         # 冲家
-        pilot_cmd_attack,
+        rush_home_attack,
 
         # 堡垒回防
         back_to_fortress,
@@ -204,16 +206,15 @@ def create_attack_outpost_tree_has_energy(node, qos_profile, nav):
 
     #前往前哨站的打击点位，在敌方前哨前的位置，
     goto_outpost = Patrol(
-        name="attack_outpost_has_energy",
+        name="attack_outpost",
         node=node,
         nav=nav,
         random=0,
         points_key="outpost",
     )
 
-
     goto_wait_point = Patrol(
-        name="attack_outpost_bumpy_wait",
+        name="bumpy_wait",
         node=node,
         nav=nav,
         random=0,
@@ -222,13 +223,13 @@ def create_attack_outpost_tree_has_energy(node, qos_profile, nav):
 
 
     # 如果在自己家并且颠簸路段上面有人，去等待点
-    check_bumpy_road_blocked = IfThenElse(
-        name="check_bumpy_road_blocked",
+    check_bumpy_exist_enemy_blocked = IfThenElse(
+        name="check_bumpy_exist_enemy_blocked",
         condition_child=Condition(
-            name="bumpy_road_blocked",
+            name="bumpy_exist_enemy_blocked",
             node=node,
             keys=["Referee","region_area"],
-            condition_func= lambda values: values["Referee"].bumpy_road == 1 and values["region_area"] == 0,
+            condition_func= lambda values: values["Referee"].bumpy_exist_enemy == 1 and values["region_area"] == 0,
         ),
         then_child=goto_wait_point,
         else_child=goto_outpost
@@ -243,7 +244,7 @@ def create_attack_outpost_tree_has_energy(node, qos_profile, nav):
     )
 
     if_enemy_outpost_alive.add_children([enemy_outpost_alive_condition, 
-                                         check_bumpy_road_blocked])
+                                         check_bumpy_exist_enemy_blocked])
 
     return if_enemy_outpost_alive
 
@@ -258,7 +259,7 @@ def create_has_energy_mid_attack_tree(node, qos_profile, nav):
 
     # 颠簸路段后有人时停留在一级台阶前的等待点
     goto_wait_point = Patrol(
-        name="mid_attack_bumpy_wait",
+        name="bumpy_wait",
         node=node,
         nav=nav,
         random=0,
@@ -266,13 +267,13 @@ def create_has_energy_mid_attack_tree(node, qos_profile, nav):
     )
 
     # 当在自己半场，我方颠簸路段后是否有车阻拦
-    check_bumpy_road_blocked = IfThenElse(
-        name="check_bumpy_road_blocked",
+    check_bumpy_exist_enemy_blocked = IfThenElse(
+        name="check_bumpy_exist_enemy_blocked",
         condition_child=Condition(
-            name="bumpy_road_blocked",
+            name="bumpy_exist_enemy_blocked",
             node=node,
             keys=["Referee","region_area"],
-            condition_func= lambda values: values["Referee"].bumpy_road == 1 and values["region_area"] == 0,
+            condition_func= lambda values: values["Referee"].bumpy_exist_enemy == 1 and values["region_area"] == 0,
         ),
         then_child=goto_wait_point,
         else_child=create_catch_and_patrol_tree(node, qos_profile, nav)
@@ -282,7 +283,7 @@ def create_has_energy_mid_attack_tree(node, qos_profile, nav):
 
 
 
-    return check_bumpy_road_blocked
+    return check_bumpy_exist_enemy_blocked
 # ---------------- END 第三层 有能量情况下 高地打人决策 Switch ----------------
 
 
@@ -331,7 +332,7 @@ def create_no_energy_at_mid_tree(node, qos_profile, nav):
     )
 
     # 冲家
-    pilot_cmd_attack  = create_pilot_cmd_attack_enemy_mid_subtree(node,qos_profile,nav)
+    rush_home_attack  = create_rush_home_attack_enemy_mid_subtree(node,qos_profile,nav)
        
     # 去前哨站:
     attack_outpost_tree_in_mid = create_attack_outpost_tree_no_energy_in_mid(node,qos_profile,nav)
@@ -342,7 +343,7 @@ def create_no_energy_at_mid_tree(node, qos_profile, nav):
     # 高地打人:
     catch_and_patrol_tree = create_catch_and_patrol_tree(node,qos_profile,nav)
 
-    at_mid_tree.add_children([pilot_cmd_attack,
+    at_mid_tree.add_children([rush_home_attack,
                               attack_outpost_tree_in_mid,
                               back_to_fortress,
                               catch_and_patrol_tree])
@@ -355,7 +356,7 @@ def create_no_energy_at_enemy_tree(node, qos_profile, nav):
 
     # 堵住台阶或者狗洞，在enemy_outlet中一个或者多个点，开始巡逻
     block_their_way = Patrol(
-        name="enemy_outlet_patrol",
+        name="enemy_outlet",
         node=node,
         nav=nav,
         random=0,
@@ -369,7 +370,6 @@ def create_no_energy_at_enemy_tree(node, qos_profile, nav):
 
 
 def create_attack_outpost_tree_no_energy_in_mid(node,qos_profile,nav):
-    
     if_enemy_outpost_alive = py_trees.composites.Sequence(
         name="if_enemy_outpost_alive",
         memory=False,
@@ -377,7 +377,7 @@ def create_attack_outpost_tree_no_energy_in_mid(node,qos_profile,nav):
 
     #前往前前哨站的打击点位，在地方前哨前的位置，
     goto_outpost = Patrol(
-        name="attack_outpost_no_energy_mid",
+        name="attack_outpost",
         node=node,
         nav=nav,
         random=0,
@@ -393,8 +393,11 @@ def create_attack_outpost_tree_no_energy_in_mid(node,qos_profile,nav):
         condition_func=lambda value: value["Referee"].enemy_outpost_alive == 1 and value["Referee"].stage_remain_time <=360
     )
 
+
     if_enemy_outpost_alive.add_children([enemy_outpost_alive_condition, 
-                                         goto_outpost])
+                                         goto_outpost,
+                                         ])
+                                        
 
     return if_enemy_outpost_alive
 
@@ -402,14 +405,14 @@ def create_attack_outpost_tree_no_energy_in_mid(node,qos_profile,nav):
 
 # ------------ START SUBTREE  回家 ----------------
 def condition_home(patrol):
-        return False
+        # return False
         is_hp_full = (patrol.blackboard.Referee.remain_hp >= 399)
         is_hp_low = (patrol.blackboard.Referee.remain_hp < patrol.yaml.blood_limit)
         is_bullet_low = (patrol.blackboard.Referee.bullet_remaining_num_17mm < 75)
         is_bullet_empty = (patrol.blackboard.Referee.bullet_remaining_num_17mm <= 0)
         is_final_minute = (patrol.blackboard.Referee.stage_remain_time <=62)
-        patrol.got_bullet = ((patrol.blackboard.Referee.bullet_remaining_num_17mm - patrol.bullet_remain_last > 50) and patrol.blackboard.home_occupy != 0) #在家里这一刻拿到弹了
-        print(f"got_bullet_in_final_minute:{patrol.got_bullet_in_final_minute},{patrol.got_bullet}")
+        patrol.got_bullet = False #在家里这一刻拿到弹了
+        # print(f"got_bullet_in_final_minute:{patrol.got_bullet_in_final_minute},{patrol.got_bullet}")
         '''
         #     需要回家需要满足的条件：
         #     case1： 比赛前六分钟没血或没弹就回家，直到血量满且子弹足
@@ -423,63 +426,61 @@ def condition_home(patrol):
 
         '''
         if is_final_minute:
-            if patrol.got_bullet:
-                patrol.got_bullet_in_final_minute  = True
+            patrol.got_bullet =(patrol.blackboard.Referee.bullet_remaining_num_17mm - patrol.bullet_remain_last > 50) 
             
         #  最后一分钟并且拿到过弹后，仅血量不足回家,血回满再走
         if  patrol.got_bullet_in_final_minute :
             if is_hp_low:
                 return True
-            elif (not is_hp_full) and patrol.blackboard.dec_now == 'goto_home':
+            elif (not is_hp_full) and patrol.blackboard.dec_now == 'home':
                 return True
         else: #其他情况 没血或者没弹回家，补充满再走
             if is_hp_low or is_bullet_empty: 
                 return True
             # elif patrol.waiting_for == "home_phase_12s":
             #     return True
-            elif ((not is_hp_full) or is_bullet_low) and patrol.blackboard.dec_now == 'goto_home': #血量没回满或者子弹不足，继续在家呆着
+            elif ((not is_hp_full) or is_bullet_low) and patrol.blackboard.dec_now == 'home': #血量没回满或者子弹不足，继续在家呆着
                 return True
         return False
 
 # ---------------- END  回家 ----------------
 
-
 # ------------ START SUBTREE 云台手cmd 冲家/高地 Switch----------------
-def create_pilot_cmd_attack_subtree(node,qos_profile,nav):
+def create_rush_home_attack_subtree(node,qos_profile,nav):
     """
              云台手cmd冲家
              switch 选择冲家/高地
     """
    
     # 冲家
-    attack_enemy_base_layer = create_pilot_cmd_attack_enemy_base_subtree(node,qos_profile,nav)
+    attack_enemy_base_layer = create_rush_home_attack_enemy_base_subtree(node,qos_profile,nav)
     
     # 冲高地
 
-    attack_mid_layer = create_pilot_cmd_attack_enemy_mid_subtree(node,qos_profile,nav)
+    attack_mid_layer = create_rush_home_attack_enemy_mid_subtree(node,qos_profile,nav)
 
 
    # SWITCH 接受云台手cmd
 
-    pilot_cmd_attack = Switch(
-        name="pilot_cmd",
+    rush_home_attack = Switch(
+        name="rush_home",
         node=node,
-        key="Referee.pilot_cmd",
+        key="Referee.rush_home",
         cases={
-            "0": py_trees.behaviours.Failure(name="receive_no_pilot_cmd"),
+            "0": py_trees.behaviours.Failure(name="receive_no_rush_home"),
             "1": attack_mid_layer,
             "2": attack_enemy_base_layer,
         },
-        default_child=py_trees.behaviours.Failure(name="receive_no_pilot_cmd")
+        default_child=py_trees.behaviours.Failure(name="receive_no_rush_home")
     )
 
-    return pilot_cmd_attack
+    return rush_home_attack
 
 # ------------ END SUBTREE 云台手cmd 冲家/高地 Switch----------------
 
 # ------------ START SUBTREE 云台手cmd 冲家----------------
 
-def create_pilot_cmd_attack_enemy_base_subtree(node,qos_profile,nav):
+def create_rush_home_attack_enemy_base_subtree(node,qos_profile,nav):
     
     def create_check_ready_to_attack(node):
         return Condition(
@@ -498,7 +499,7 @@ def create_pilot_cmd_attack_enemy_base_subtree(node,qos_profile,nav):
     )
     
     attack_enemy_base = Patrol(
-        name="attack_base_in_their_home",
+        name="attack_base",
         node=node,
         nav=nav,
         random=0,
@@ -509,7 +510,7 @@ def create_pilot_cmd_attack_enemy_base_subtree(node,qos_profile,nav):
 # ------------ END SUBTREE 云台手cmd 冲家----------------
 
 # ------------ START SUBTREE 云台手cmd 高地 ----------------
-def create_pilot_cmd_attack_enemy_mid_subtree(node,qos_profile,nav):
+def create_rush_home_attack_enemy_mid_subtree(node,qos_profile,nav):
 
     def create_check_ready_to_attack(node):
         return Condition(
@@ -519,7 +520,7 @@ def create_pilot_cmd_attack_enemy_mid_subtree(node,qos_profile,nav):
             condition_func=lambda values: (
                 values["Referee"].remain_hp >= 1
                 and values["Referee"].bullet_remaining_num_17mm >= 50
-                and values["Referee"].pilot_cmd == 1
+                and values["Referee"].rush_home == 1
 
             ),
     )
@@ -530,12 +531,35 @@ def create_pilot_cmd_attack_enemy_mid_subtree(node,qos_profile,nav):
     )
 
     attack_mid = Patrol(
-        name="attack_base_in_mid",
+        name="attack_mid",
         node=node,
         nav=nav,
         random=1,
     )
-    attack_mid_layer.add_children([create_check_ready_to_attack(node),attack_mid])
+
+    lob_base = py_trees.composites.Sequence(
+        name="lob_base",
+        memory=False
+    )
+
+    set_lob_base = py_trees.behaviours.SetBlackboardVariable(
+        name="set_lob_base",
+        variable_name="lob_base",
+        variable_value=Bool(data=True),
+        overwrite=True,
+    )
+    
+    send_lob_base = py_trees_ros.publishers.FromBlackboard(
+        name="send_lob_base",
+        topic_name="lob_base",
+        topic_type=Bool,
+        qos_profile=qos_profile,
+        blackboard_variable="lob_base",
+    )
+    send_lob_base.setup(node=node)
+    
+    lob_base.add_children([set_lob_base, send_lob_base])
+    attack_mid_layer.add_children([create_check_ready_to_attack(node), attack_mid])
 
     return attack_mid_layer
 
@@ -554,17 +578,17 @@ def create_subtree_energy_return_fortress_tree(node, qos_profile, nav):
         name="energy_should_back_to_fortress",
         node=node,
         keys=["Referee"],
-        condition_func=lambda value: value["Referee"].fortress_enemy == 1
+        condition_func=lambda value: value["Referee"].defend_fortress == 1
     )
     goto_fortress_home = Patrol(
-        name="energy_fortress_patrol_home",
+        name="goto_fortress",
         node=node,
         nav=nav,
         random=0,
         points_key="fortress_when_at_home"
     )
     goto_fortress_mid = Patrol(
-        name="energy_fortress_patrol_mid",
+        name="goto_fortress",
         node=node,
         nav=nav,
         random=0,
@@ -594,10 +618,10 @@ def create_subtree_no_energy_home_return_fortress_tree(node, qos_profile, nav):
         name="no_energy_home_should_return_fortress",
         node=node,
         keys=["Referee"],
-        condition_func=lambda value: value["Referee"].fortress_enemy == 1
+        condition_func=lambda value: value["Referee"].defend_fortress == 1
     )
     goto_fortress_home = Patrol(
-        name="no_energy_fortress_patrol_home",
+        name="goto_fortress",
         node=node,
         nav=nav,
         random=0,
@@ -617,10 +641,10 @@ def create_subtree_no_energy_mid_return_fortress_tree(node, qos_profile, nav):
         name="no_energy_mid_should_return_fortress",
         node=node,
         keys=["Referee"],
-        condition_func=lambda value: value["Referee"].fortress_enemy == 1
+        condition_func=lambda value: value["Referee"].defend_fortress == 1
     )
     goto_fortress_mid = Patrol(
-        name="no_energy_fortress_patrol_mid",
+        name="goto_fortress",
         node=node,
         nav=nav,
         random=0,
@@ -677,7 +701,7 @@ def create_catch_and_patrol_tree(node, qos_profile, nav):
         name="catch_hero_condition",
         node=node,
         keys=["Referee"],
-        condition_func= lambda values: values["Referee"].enemy_hero_pos != 0,
+        condition_func= lambda values: values["Referee"].catch_hero != 0,
     )
     # 前往打击英雄的点位，打击英雄的点位由雷达发出，所以random等于2
     goto_enemy_hero = Patrol(
@@ -701,7 +725,7 @@ def create_catch_and_patrol_tree(node, qos_profile, nav):
         name="catch_engineer_condition",
         node=node,
         keys=["Referee"],
-        condition_func= lambda values: values["Referee"].enemy_engineer_pos != 0,
+        condition_func= lambda values: values["Referee"].catch_engineer != 0,
     )
 
     # 前往打击工程的点位，打击工程的点位由雷达发出，所以random等于2
@@ -748,8 +772,13 @@ def create_pub_goal_and_behaviour(node, qos_profile, nav):
         nav=nav
     )
 
+    nav_pitch = PitchDec(
+        name="pitch_dec",
+        node=node,
+    )
 
-    pub_goal_and_behaviour.add_children([pub_goal])
+
+    pub_goal_and_behaviour.add_children([nav_pitch,pub_goal])
 
     return pub_goal_and_behaviour
 

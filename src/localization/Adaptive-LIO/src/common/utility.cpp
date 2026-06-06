@@ -55,24 +55,16 @@ void sub_sample_frame(std::vector<point3D> &frame, double size_voxel)
 void grid_sampling(const std::vector<point3D> &frame, std::vector<point3D> &keypoints, double size_voxel_subsampling)
 {
      keypoints.clear();
-     std::vector<point3D> frame_sub;
-     frame_sub.resize(frame.size());
-     for (int i = 0; i < (int)frame_sub.size(); i++)
-     {
-          frame_sub[i] = frame[i];
-     }
+     std::vector<point3D> frame_sub(frame);
      sub_sample_frame(frame_sub, size_voxel_subsampling);
-     keypoints.reserve(frame_sub.size());
-     for (int i = 0; i < (int)frame_sub.size(); i++)
-     {
-          keypoints.push_back(frame_sub[i]);
-     }
+     keypoints = std::move(frame_sub);
 }
 
 
 void subSampleFrame(std::vector<point3D> &frame, double size_voxel)
 {
      std::tr1::unordered_map<voxel, std::vector<point3D>, std::hash<voxel>> grid;
+     grid.rehash(frame.size());
      for (int i = 0; i < (int)frame.size(); i++)
      {
           auto kx = static_cast<short>(frame[i].point[0] / size_voxel);
@@ -80,7 +72,8 @@ void subSampleFrame(std::vector<point3D> &frame, double size_voxel)
           auto kz = static_cast<short>(frame[i].point[2] / size_voxel);
           grid[voxel(kx, ky, kz)].push_back(frame[i]);
      }
-     frame.resize(0);
+     frame.clear();
+     frame.reserve(grid.size());
      int step = 0;
      for (const auto &n : grid)
      {
@@ -94,19 +87,10 @@ void subSampleFrame(std::vector<point3D> &frame, double size_voxel)
 
 void gridSampling(const std::vector<point3D> &frame, std::vector<point3D> &keypoints, double size_voxel_subsampling)
 {
-     keypoints.resize(0);
-     std::vector<point3D> frame_sub;
-     frame_sub.resize(frame.size());
-     for (int i = 0; i < (int)frame_sub.size(); i++)
-     {
-          frame_sub[i] = frame[i];
-     }
+     keypoints.clear();
+     std::vector<point3D> frame_sub(frame);
      subSampleFrame(frame_sub, size_voxel_subsampling);
-     keypoints.reserve(frame_sub.size());
-     for (int i = 0; i < (int)frame_sub.size(); i++)
-     {
-          keypoints.push_back(frame_sub[i]);
-     }
+     keypoints = std::move(frame_sub);
 }
 
 void distortFrame(std::vector<point3D> &points, Eigen::Quaterniond &q_begin, Eigen::Quaterniond &q_end, Eigen::Vector3d &t_begin, Eigen::Vector3d &t_end,

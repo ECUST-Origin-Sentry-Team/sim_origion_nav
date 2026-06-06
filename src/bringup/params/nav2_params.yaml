@@ -173,108 +173,108 @@ controller_server:
       yaw_goal_tolerance: 3.14
     
 
-    # FollowPath:
-    #     plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"
-    #     translation_kp: 4.0
-    #     translation_ki: 0.0
-    #     translation_kd: 0.0
-    #     enable_rotation: false
-    #     rotation_kp: 3.0
-    #     rotation_ki: 0.1
-    #     rotation_kd: 0.3
-    #     transform_tolerance: 0.2
-    #     min_max_sum_error: 1.0
-    #     lookahead_dist: 1.0
-    #     use_velocity_scaled_lookahead_dist: true
-    #     lookahead_time: 0.5
-    #     min_lookahead_dist: 0.5
-    #     max_lookahead_dist: 1.0
-    #     use_interpolation: True
-    #     use_rotate_to_heading: false
-    #     use_rotate_to_heading_treshold: 0.1
-    #     min_approach_linear_velocity: 0.0
-    #     approach_velocity_scaling_dist: 1.5
-    #     v_linear_min: -14.5
-    #     v_linear_max: 14.5
-    #     v_angular_min: -100.0
-    #     v_angular_max: 100.0
-    #     curvature_min: 0.4
-    #     curvature_max: 0.7
-    #     reduction_ratio_at_high_curvature: 0.6
-    #     curvature_forward_dist: 1.0
-    #     curvature_backward_dist: 0.3
-    #     max_velocity_scaling_factor_rate: 0.9
+    FollowPath:
+        plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"
+        translation_kp: 4.0
+        translation_ki: 0.0
+        translation_kd: 0.0
+        enable_rotation: false
+        rotation_kp: 3.0
+        rotation_ki: 0.1
+        rotation_kd: 0.3
+        transform_tolerance: 0.2
+        min_max_sum_error: 1.0
+        lookahead_dist: 1.0
+        use_velocity_scaled_lookahead_dist: true
+        lookahead_time: 0.5
+        min_lookahead_dist: 0.5
+        max_lookahead_dist: 1.0
+        use_interpolation: True
+        use_rotate_to_heading: false
+        use_rotate_to_heading_treshold: 0.1
+        min_approach_linear_velocity: 0.0
+        approach_velocity_scaling_dist: 1.5
+        v_linear_min: -14.5
+        v_linear_max: 14.5
+        v_angular_min: -100.0
+        v_angular_max: 100.0
+        curvature_min: 0.4
+        curvature_max: 0.7
+        reduction_ratio_at_high_curvature: 0.6
+        curvature_forward_dist: 1.0
+        curvature_backward_dist: 0.3
+        max_velocity_scaling_factor_rate: 0.9
 
 
-    FollowPath:    
-      plugin: "nav2_mppi_controller::MPPIController"
-      time_steps: 56
-      model_dt: 0.06 # 预测时间：0.05*56=2.8s
+    # FollowPath:    
+    #   plugin: "nav2_mppi_controller::MPPIController"
+    #   time_steps: 56
+    #   model_dt: 0.06 # 预测时间：0.05*56=2.8s
       
-      batch_size: 2000
-      vx_std: 0.5 #0.2
-      vy_std: 0.5 #0.2
-      wz_std: 0.1 #0.4
-      vx_max: 3.0 #0.5 预测距离：2.8*1.5=8.4m local_costmap的大小至少为8.4*8.4
-      vx_min: -3.0 #-0.35
-      vy_max: 3.0 #0.5
-      wz_max: 0.1 #1.9
-      ax_max: 20.0
-      ay_max: 20.0
-      ax_min: -20.0
-      ay_min: -20.0
-      iteration_count: 1
-      prune_distance: 8.5 #1.7 需大于等于8.4m
-      transform_tolerance: 0.1
-      temperature: 0.3
-      gamma: 0.015
-      motion_model: "Omni"
-      visualize: true
-      publish_optimal_trajectory : true
+    #   batch_size: 2000
+    #   vx_std: 0.5 #0.2
+    #   vy_std: 0.5 #0.2
+    #   wz_std: 0.1 #0.4
+    #   vx_max: 3.0 #0.5 预测距离：2.8*1.5=8.4m local_costmap的大小至少为8.4*8.4
+    #   vx_min: -3.0 #-0.35
+    #   vy_max: 3.0 #0.5
+    #   wz_max: 0.1 #1.9
+    #   ax_max: 20.0
+    #   ay_max: 20.0
+    #   ax_min: -20.0
+    #   ay_min: -20.0
+    #   iteration_count: 1
+    #   prune_distance: 8.5 #1.7 需大于等于8.4m
+    #   transform_tolerance: 0.1
+    #   temperature: 0.3
+    #   gamma: 0.015
+    #   motion_model: "Omni"
+    #   visualize: true
+    #   publish_optimal_trajectory : true
 
-      TrajectoryVisualizer:
-        trajectory_step: 5
-        time_step: 3
-      TrajectoryValidator:
-        plugin: "mppi::DefaultOptimalTrajectoryValidator"
-        collision_lookahead_time: 2.0
-        consider_footprint: false
-      critics: ["ObstaclesCritic", "GoalCritic", "PathAlignCritic", "PathFollowCritic", "TwirlingCritic"]
-      GoalCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 5.0
-        threshold_to_consider: 2.8 #1.0 prediction horizon
-      ObstaclesCritic:
-        enabled: true
-        cost_power: 1
-        repulsion_weight: 0.1 #default: 1.5 和costmap配合避障，越大避障越强
-        critical_weight: 20.0
-        consider_footprint: false
-        collision_cost: 50.0
-        collision_margin_distance: 0.11 #多少米以内算危险区域
-        near_goal_distance: 0.5
-        inflation_radius: 0.55 # (only in Humble)
-        cost_scaling_factor: 5.0 #10.0 # (only in Humble)
-        inflation_layer_name: "inflation_layer" # local_costmap的layer name
-      PathAlignCritic:
-        enabled: true
-        cost_power: 2   #1  改大转弯变好？
-        cost_weight: 8.0 #14.0 
-        max_path_occupancy_ratio: 0.05
-        trajectory_point_step: 2
-        threshold_to_consider: 0.40
-        offset_from_furthest: 25 #20 4.2m / 0.05(resolution) * 0.3 = 25.2
-      PathFollowCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 5.0
-        offset_from_furthest: 25 #5
-        threshold_to_consider: 2.8 #0.6 prediction horizon
-      TwirlingCritic:
-        enabled: true
-        twirling_cost_power: 1
-        twirling_cost_weight: 10.0
+    #   TrajectoryVisualizer:
+    #     trajectory_step: 5
+    #     time_step: 3
+    #   TrajectoryValidator:
+    #     plugin: "mppi::DefaultOptimalTrajectoryValidator"
+    #     collision_lookahead_time: 2.0
+    #     consider_footprint: false
+    #   critics: ["ObstaclesCritic", "GoalCritic", "PathAlignCritic", "PathFollowCritic", "TwirlingCritic"]
+    #   GoalCritic:
+    #     enabled: true
+    #     cost_power: 1
+    #     cost_weight: 5.0
+    #     threshold_to_consider: 2.8 #1.0 prediction horizon
+    #   ObstaclesCritic:
+    #     enabled: true
+    #     cost_power: 1
+    #     repulsion_weight: 0.1 #default: 1.5 和costmap配合避障，越大避障越强
+    #     critical_weight: 20.0
+    #     consider_footprint: false
+    #     collision_cost: 50.0
+    #     collision_margin_distance: 0.11 #多少米以内算危险区域
+    #     near_goal_distance: 0.5
+    #     inflation_radius: 0.55 # (only in Humble)
+    #     cost_scaling_factor: 5.0 #10.0 # (only in Humble)
+    #     inflation_layer_name: "inflation_layer" # local_costmap的layer name
+    #   PathAlignCritic:
+    #     enabled: true
+    #     cost_power: 2   #1  改大转弯变好？
+    #     cost_weight: 8.0 #14.0 
+    #     max_path_occupancy_ratio: 0.05
+    #     trajectory_point_step: 2
+    #     threshold_to_consider: 0.40
+    #     offset_from_furthest: 25 #20 4.2m / 0.05(resolution) * 0.3 = 25.2
+    #   PathFollowCritic:
+    #     enabled: true
+    #     cost_power: 1
+    #     cost_weight: 5.0
+    #     offset_from_furthest: 25 #5
+    #     threshold_to_consider: 2.8 #0.6 prediction horizon
+    #   TwirlingCritic:
+    #     enabled: true
+    #     twirling_cost_power: 1
+    #     twirling_cost_weight: 10.0
 
 local_costmap:
   local_costmap:
@@ -413,21 +413,22 @@ map_saver:
 
 planner_server:
   ros__parameters:
-    expected_planner_frequency: 20.0
-    use_sim_time: True
-    planner_plugins: ["GridBased"]
-    GridBased:
+    planner_plugins: ["TopoPlanner"]
+
+    TopoPlanner:
+      plugin: "topology_global_planner::TopologyGlobalPlanner"
+      topology_yaml: "/home/tony/ros/origin_nav2025_developing/src/navigation/topology_global_planner/config/t1.yaml"
+      use_topology: true
+      fallback_to_inner_planner: true
+
+      inner_planner_name: "InnerPlanner"
+      inner_planner_plugin: "nav2_navfn_planner/NavfnPlanner"
+
+    InnerPlanner:
       plugin: "nav2_navfn_planner/NavfnPlanner"
-      tolerance: 0.2
-      use_astar: false
-      allow_unknown: true
-      use_final_approach_orientation: true
-    # GridBased:
-    #   plugin: "nav2_theta_star_planner/ThetaStarPlanner" # In Iron and older versions, "/" was used instead of "::"
-    #   how_many_corners: 8
-    #   w_euc_cost: 1.0
-    #   w_traversal_cost: 2.0
-    #   w_heuristic_cost: 1.0
+      tolerance: 0.5
+      use_astar: true
+      allow_unknown: false
 
 smoother_server:
   ros__parameters:

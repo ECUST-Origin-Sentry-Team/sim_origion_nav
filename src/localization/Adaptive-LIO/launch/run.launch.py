@@ -1,5 +1,3 @@
-import os
-
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -15,7 +13,7 @@ def generate_launch_description():
 
     adaptive_lio_dir = get_package_share_directory("adaptive_lio")
     declare_adaptive_lio_cfg_dir = DeclareLaunchArgument(
-        "adaptive_lio_dir",
+        "adaptive_lio_cfg_dir",
         default_value=PathJoinSubstitution([adaptive_lio_dir, "config", "mapping_m.yaml"]),
         description="Path to the adaptive_lio config file",
     )
@@ -32,7 +30,7 @@ def generate_launch_description():
         executable=project,
         name=project,
         output='screen',
-        parameters=[adaptive_lio_dir],
+        arguments=['--config_file', adaptive_lio_cfg_dir],
     )
 
     # RVIZ 可视化节点

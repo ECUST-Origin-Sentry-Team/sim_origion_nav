@@ -53,7 +53,7 @@ void MultipleResolutionVoxelMap::RemoveElementsFarFromLocation(const Eigen::Vect
           {
                if (pair.second.points.empty())
                     voxels_to_remove.insert(pair.first);
-               if ((pair.second.points.front() - location) .norm() > distance)
+                if ((pair.second.points.front() - location).squaredNorm() > distance * distance)
                     voxels_to_remove.insert(pair.first);
           }
 
@@ -137,15 +137,23 @@ void MultipleResolutionVoxelMap::RadiusSearchInPlace(const Eigen::Vector3d &quer
                                                      int threshold_voxel_capacity,
                                                      bool nearest_neighbors) const
 {
-     neighborhood.resize(0);
-     neighborhood.reserve(max_num_neighbors);
+     neighborhood.clear();
+     if (nearest_neighbors && max_num_neighbors <= 0)
+     {
+          return;
+     }
+     if (nearest_neighbors)
+     {
+          neighborhood.reserve(max_num_neighbors);
+     }
      const SearchParams params = SearchParamsFromRadiusSearch(radius);
      // const SearchParams params = SearchParamsFromRadius(radius);
 
      const auto &hash_map_ = voxel_maps_[params.map_id].map;
-     const double voxel_size = params.voxel_resolution;
-     const int nb_voxels_visited = params.voxel_neighborhood;
-     const double max_neighborhood_radius = params.radius;
+      const double voxel_size = params.voxel_resolution;
+      const int nb_voxels_visited = params.voxel_neighborhood;
+      const double max_neighborhood_radius = params.radius;
+      const double max_neighborhood_radius_sq = max_neighborhood_radius * max_neighborhood_radius;
      voxel vox = voxel::coordinates(query, voxel_size);
      int kx = vox.x;
      int ky = vox.y;
@@ -153,11 +161,11 @@ void MultipleResolutionVoxelMap::RadiusSearchInPlace(const Eigen::Vector3d &quer
 
      priority_queue_t priority_queue;
      size_t num_points_skipped = 0;
-     for (short kxx = kx - nb_voxels_visited; kxx < kx + nb_voxels_visited + 1; ++kxx)
+     for (int kxx = kx - nb_voxels_visited; kxx <= kx + nb_voxels_visited; ++kxx)
      {
-          for (short kyy = ky - nb_voxels_visited; kyy < ky + nb_voxels_visited + 1; ++kyy)
+          for (int kyy = ky - nb_voxels_visited; kyy <= ky + nb_voxels_visited; ++kyy)
           {
-               for (short kzz = kz - nb_voxels_visited; kzz < kz + nb_voxels_visited + 1; ++kzz)
+               for (int kzz = kz - nb_voxels_visited; kzz <= kz + nb_voxels_visited; ++kzz)
                {
                     vox.x = kxx;
                     vox.y = kyy;
@@ -172,29 +180,50 @@ void MultipleResolutionVoxelMap::RadiusSearchInPlace(const Eigen::Vector3d &quer
                          for (int i(0); i < voxel_block.NumPoints(); ++i)
                          {
                               auto &neighbor = voxel_block.points[i];
-                              double distance = (neighbor - query).norm();
-                              if (priority_queue.size() == max_num_neighbors)
-                              {
-                                   if (distance < std::get<0>(priority_queue.top()))
-                                   {
-                                        priority_queue.pop();
-                                        priority_queue.emplace(distance, neighbor, vox);
-                                   }
-                              }
-                              else
-                                   priority_queue.emplace(distance, neighbor, vox);
-                         }
-                    }
-               }
+                               double distance = (neighbor - query).squaredNorm();
+                               if (distance > max_neighborhood_radius_sq)
+                               {
+                                    num_points_skipped++;
+                                    continue;
+                               }
+                               if (nearest_neighbors)
+                               {
+                                    if (priority_queue.size() == static_cast<size_t>(max_num_neighbors))
+                                    {
+                                         if (distance < std::get<0>(priority_queue.top()))
+                                         {
+                                              priority_queue.pop();
+                                              priority_queue.emplace(distance, neighbor, vox);
+                                         }
+                                    }
+                                    else
+                                    {
+                                         priority_queue.emplace(distance, neighbor, vox);
+                                    }
+                               }
+                               else
+                               {
+                                    neighborhood.push_back(neighbor);
+                               }
+                          }
+                     }
+                }
           }
      }
-     neighborhood.resize(0);
+     if (!nearest_neighbors)
+     {
+          return;
+     }
+
+     neighborhood.clear();
      neighborhood.reserve(priority_queue.size());
      while (!priority_queue.empty())
      {
           neighborhood.push_back(std::get<1>(priority_queue.top()));
           priority_queue.pop();
      }
+
+     std::reverse(neighborhood.begin(), neighborhood.end());
 
      return;
 }

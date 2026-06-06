@@ -25,7 +25,7 @@ class PubGoal(py_trees.behaviour.Behaviour):
     def update(self):
         
         if self.blackboard.nav_status == NAV_STATUS.RUNNING:
-            return Status.FAILURE
+            return Status.SUCCESS
         
         goal_msg = PoseStamped()
         goal_msg.header.frame_id = 'map'

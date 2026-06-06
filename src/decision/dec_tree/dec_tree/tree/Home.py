@@ -4,7 +4,7 @@ from py_trees.common import Status
 from nav2_simple_commander.robot_navigator import BasicNavigator
 import time
 from .parameter import NAV_STATUS
-
+import uuid
 
 
 class Home(py_trees.behaviour.Behaviour):
@@ -17,7 +17,8 @@ class Home(py_trees.behaviour.Behaviour):
         interrupt为1可以打断running状态强制发送点位
     '''
     def __init__(self, node:Node, nav: BasicNavigator, condition_func, name="home"):
-        super().__init__("home")
+        unique_name = f"{name}_{str(uuid.uuid4())[:8]}"
+        super().__init__(unique_name)
         self.yaml = self.attach_blackboard_client(namespace="yaml")
         self.yaml.register_key('home',py_trees.common.Access.READ)
         self.blackboard = self.attach_blackboard_client()
@@ -27,12 +28,14 @@ class Home(py_trees.behaviour.Behaviour):
         self.blackboard.register_key("dec_now",py_trees.common.Access.WRITE)
         self.blackboard.register_key("nav_status",py_trees.common.Access.READ)
         self.blackboard.register_key("Referee",py_trees.common.Access.READ)
+        self.blackboard.register_key("reach_now",py_trees.common.Access.WRITE)
+
     
         
         self.points = []
         self.name = "home"
         self.len = 0
-        self.point_now = 0
+        self.point_pos_now = 0
         self.condition_func = condition_func
         self.node = node
         self.blackboard.dec_now = None
@@ -53,7 +56,9 @@ class Home(py_trees.behaviour.Behaviour):
         self.len = len(self.points)
     def init_dec(self):
         self.blackboard.dec_now = self.name
-        self.point_now = self.points[0]     
+        self.point_pos_now = self.points[0]    
+        self.blackboard.reach_now = ""
+ 
         self.wait_begin = False
         while not self.nav.isTaskComplete():
             self.nav.cancelTask()
@@ -84,8 +89,8 @@ class Home(py_trees.behaviour.Behaviour):
         # ---------------- START 若当前决策树不是本节点，则初始化本节点 ----------------
         if self.blackboard.dec_now != self.name:
             self.init_dec()
-            self.blackboard.goal = self.point_now
-            self.node.get_logger().info("%s: send goal x:%f y:%f"%("goto_home",self.point_now['x'],self.point_now['y']))
+            self.blackboard.goal = self.point_pos_now
+            self.node.get_logger().info("%s: send goal x:%f y:%f"%("goto_home",self.point_pos_now['x'],self.point_pos_now['y']))
 
 
             return Status.SUCCESS
@@ -111,6 +116,7 @@ class Home(py_trees.behaviour.Behaviour):
         # 特殊情况
         # 当前在补给区，并且距离下一波发弹的时间小于10s,则等待12s
 
+        self.blackboard.reach_now = self.name
 
         if self.waiting == True:        
             if time.time() > self.wait_until:
@@ -137,42 +143,3 @@ class Home(py_trees.behaviour.Behaviour):
     
         # ---------------- END 到点决策 ----------------
 
-
-
-
-
-
-        #开启等待后检查等待是否结束
-        if self.waiting_for is not None:        
-            if time.time() > self.wait_until:
-              
-                self.waiting_for = None
-                self.blackboard.goal = self.point_now
-                self.node.get_logger().info("%s: send goal x:%f y:%f" % (self.name, self.point_now['x'], self.point_now['y']))
-                return Status.SUCCESS
-            else:
-                self.node.get_logger().info("waiting for %s..." % self.waiting_for)
-                return Status.SUCCESS
-        
-        # # 检查是否需要进入12秒强制等待阶段
-        # elif self.blackboard.Referee.stage_remain_time % 60 <= 10 and \
-        #     self.blackboard.home_occupy != 0 and \
-        #     not self.is_in_12s_home_wait:
-
-        #     self.is_in_12s_home_wait = True
-        #     self.waiting_for = "home_phase_12s"
-        #     self.wait_until = time.time() + 12
-        #     return Status.SUCCESS
-        
-        # 正常到达目标后等待
-        elif self.blackboard.reach_goal:
-            self.waiting_for = "normal"
-            tmp = 3.0
-            self.wait_until = time.time() + tmp
-    
-        # 默认情况：发送当前目标点
-        else:
-            self.blackboard.goal = self.point_now
-            self.node.get_logger().info("%s: send goal x:%f y:%f" % (self.name, self.point_now['x'], self.point_now['y']))
-
-        return Status.SUCCESS
