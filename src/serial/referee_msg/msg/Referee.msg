@@ -21,3 +21,4 @@ uint8 rush_home
 uint8 bumpy_exist_enemy
 uint8 enemy_base_flower
 uint8 could_fire
+uint8 head_status

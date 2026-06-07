@@ -67,13 +67,51 @@ Visualization Manager:
         All Enabled: false
         aft_mapped:
           Value: false
+        armor_0:
+          Value: true
+        armor_1:
+          Value: true
+        armor_2:
+          Value: true
+        armor_3:
+          Value: true
+        armor_support_frame_0:
+          Value: true
+        armor_support_frame_1:
+          Value: true
+        armor_support_frame_2:
+          Value: true
+        armor_support_frame_3:
+          Value: true
         base_link:
           Value: true
         base_link_fake:
           Value: true
+        chassis:
+          Value: true
+        front_industrial_camera:
+          Value: true
+        front_industrial_camera_optical_frame:
+          Value: true
+        front_left_wheel:
+          Value: true
+        front_right_wheel:
+          Value: true
+        gimbal_pitch:
+          Value: true
+        light_indicator:
+          Value: true
+        livox_frame:
+          Value: true
         map:
           Value: true
         odom:
+          Value: true
+        rear_left_wheel:
+          Value: true
+        rear_right_wheel:
+          Value: true
+        speed_monitor:
           Value: true
       Marker Scale: 2
       Name: TF
@@ -83,6 +121,39 @@ Visualization Manager:
       Tree:
         map:
           odom:
+            aft_mapped:
+              base_link:
+                chassis:
+                  armor_support_frame_0:
+                    armor_0:
+                      {}
+                  armor_support_frame_1:
+                    armor_1:
+                      {}
+                  armor_support_frame_2:
+                    armor_2:
+                      {}
+                  armor_support_frame_3:
+                    armor_3:
+                      {}
+                  front_left_wheel:
+                    {}
+                  front_right_wheel:
+                    {}
+                  light_indicator:
+                    {}
+                  rear_left_wheel:
+                    {}
+                  rear_right_wheel:
+                    {}
+                gimbal_pitch:
+                  front_industrial_camera:
+                    front_industrial_camera_optical_frame:
+                      {}
+                  speed_monitor:
+                    {}
+              livox_frame:
+                {}
             base_link_fake:
               {}
       Update Interval: 0
@@ -522,6 +593,18 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /direction_arrow
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /TopoPlanner/connector_debug_markers
       Value: true
   Enabled: true
   Global Options:

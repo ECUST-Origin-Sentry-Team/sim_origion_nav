@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>topology_nav2_bt_nodes</name>
+  <version>0.1.0</version>
+  <description>Topology-aware Nav2 behavior tree nodes for connector actions.</description>
+  <maintainer email="todo@example.com">origin_nav</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>behaviortree_cpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav2_behavior_tree</depend>
+  <depend>rclcpp</depend>
+  <depend>referee_msg</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>topology_global_planner</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
