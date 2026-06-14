@@ -15,6 +15,8 @@
 #include "tf2_ros/transform_listener.h"
 #include "topology_global_planner/srv/execute_connector_action.hpp"
 #include "topology_global_planner/srv/query_topology_route.hpp"
+#include "topology_global_planner/srv/switch_route_mode.hpp"
+#include "topology_global_planner/srv/restore_connector_cost.hpp"
 
 namespace nav2_behavior_tree
 {
@@ -59,6 +61,36 @@ private:
   geometry_msgs::msg::PoseStamped last_start_;
   geometry_msgs::msg::PoseStamped last_goal_;
   QueryTopologyRouteSrv::Response cached_route_;
+};
+
+class SwitchRouteMode : public BtServiceNode<topology_global_planner::srv::SwitchRouteMode>
+{
+public:
+  SwitchRouteMode(
+    const std::string & service_node_name,
+    const BT::NodeConfiguration & conf);
+
+  static BT::PortsList providedPorts();
+
+  void on_tick() override;
+
+  BT::NodeStatus on_completion(
+    std::shared_ptr<topology_global_planner::srv::SwitchRouteMode::Response> response) override;
+};
+
+class ReConnectorCost : public BtServiceNode<topology_global_planner::srv::RestoreConnectorCost>
+{
+public:
+  ReConnectorCost(
+    const std::string & service_node_name,
+    const BT::NodeConfiguration & conf);
+
+  static BT::PortsList providedPorts();
+
+  void on_tick() override;
+
+  BT::NodeStatus on_completion(
+    std::shared_ptr<topology_global_planner::srv::RestoreConnectorCost::Response> response) override;
 };
 
 class IsConnectorActionRequired : public BT::ConditionNode

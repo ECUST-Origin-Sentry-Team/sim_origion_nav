@@ -1,227 +1,231 @@
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="6" name="NavigateRecovery">
-      <PipelineSequence name="TopoAwareNavigate">
-        <QueryTopologyRoute goal="{goal}"
-                            service_name="TopoPlanner/query_topology_route"
-                            global_frame="map"
-                            robot_base_frame="base_link_fake"
-                            transaction_active="{connector_transaction_active}"
-                            final_goal="{final_goal}"
-                            wait_pose="{wait_pose}"
-                            connector_pose="{connector_pose}"
-                            exit_pose="{exit_pose}"
-                            connector_id="{connector_id}"
-                            action_type="{action_type}"
-                            from_region="{from_region}"
-                            to_region="{to_region}"
-                            need_action="{need_action}"
-                            down_timeout="{down_timeout}"
-                            up_monitor_timeout="{up_monitor_timeout}"
-                            cancel_policy="{cancel_policy}"/>
+      <Sequence name="NavigateThenRestoreCost">
+        <PipelineSequence name="TopoAwareNavigate">
+          <QueryTopologyRoute goal="{goal}"
+                              service_name="TopoPlanner/query_topology_route"
+                              global_frame="map"
+                              robot_base_frame="base_link_fake"
+                              transaction_active="{connector_transaction_active}"
+                              final_goal="{final_goal}"
+                              wait_pose="{wait_pose}"
+                              connector_pose="{connector_pose}"
+                              exit_pose="{exit_pose}"
+                              connector_id="{connector_id}"
+                              action_type="{action_type}"
+                              from_region="{from_region}"
+                              to_region="{to_region}"
+                              need_action="{need_action}"
+                              down_timeout="{down_timeout}"
+                              up_monitor_timeout="{up_monitor_timeout}"
+                              cancel_policy="{cancel_policy}"/>
 
-        <ReactiveFallback name="TopoRouteDispatch">
-          <PipelineSequence name="NormalNavigate">
-            <Inverter>
-              <IsConnectorActionRequired need_action="{need_action}"/>
-            </Inverter>
-
-            <SetHeadCommand service_name="/connector_action_manager/execute"
-                            down="false"/>
-
-            <PipelineSequence name="NavigateToFinalGoalDirect">
-              <PlannerSelector selected_planner="{selected_planner}"
-                               default_planner="TopoPlanner"/>
-
-              <RateController hz="1.0">
-                <RecoveryNode number_of_retries="1" name="ComputePathToFinalGoalDirect">
-                  <ComputePathToPose goal="{final_goal}"
-                                     path="{path_to_final_direct}"
-                                     planner_id="{selected_planner}"/>
-                  <ClearEntireCostmap name="ClearGlobalCostmap-Direct"
-                                      service_name="global_costmap/clear_entirely_global_costmap"/>
-                </RecoveryNode>
-              </RateController>
-
-              <RecoveryNode number_of_retries="1" name="FollowDirectPath">
-                <FollowPath path="{path_to_final_direct}" controller_id="FollowPath"/>
-                <ClearEntireCostmap name="ClearLocalCostmap-Direct"
-                                    service_name="local_costmap/clear_entirely_local_costmap"/>
-              </RecoveryNode>
-            </PipelineSequence>
-          </PipelineSequence>
-
-          <Sequence name="ConnectorNavigateThenGoal">
-            <ConnectorTransactionGuard service_name="/connector_action_manager/execute"
-                                       session_id="{connector_id}"
-                                       connector_id="{connector_id}"
-                                       goal="{goal}"
-                                       action_type="{action_type}"
-                                       connector_pose="{connector_pose}"
-                                       wait_pose="{wait_pose}"
-                                       exit_pose="{exit_pose}"
-                                       cancel_policy="{cancel_policy}"
-                                       preempt_cancel_policy="down_if_safe"
-                                       connector_stage="{connector_stage}"
-                                       transaction_active="{connector_transaction_active}">
-              <Sequence name="HeadConnectorCrossingOnly">
+          <ReactiveFallback name="TopoRouteDispatch">
+            <PipelineSequence name="NormalNavigate">
+              <Inverter>
                 <IsConnectorActionRequired need_action="{need_action}"/>
+              </Inverter>
 
-                <SetConnectorStage stage="APPROACHING_WAIT"
-                                   yield_once="false"
-                                   connector_stage="{connector_stage}"/>
+              <SetHeadCommand service_name="/connector_action_manager/execute"
+                              down="false"/>
 
-                <ExecuteConnectorAction service_name="/connector_action_manager/execute"
-                                        session_id="{connector_id}"
-                                        connector_id="{connector_id}"
-                                        goal="{goal}"
-                                        action_type="{action_type}"
-                                        phase="begin"
-                                        connector_pose="{connector_pose}"
-                                        wait_pose="{wait_pose}"
-                                        exit_pose="{exit_pose}"
-                                        timeout="5.0"
-                                        cancel_policy="{cancel_policy}"/>
+              <PipelineSequence name="NavigateToFinalGoalDirect">
+                <PlannerSelector selected_planner="{selected_planner}"
+                                default_planner="TopoPlanner"/>
 
-                <PipelineSequence name="NavigateToWaitPose">
-                  <PlannerSelector selected_planner="{selected_planner}"
-                                   default_planner="TopoPlanner"/>
-
-                  <RateController hz="1.0">
-                    <RecoveryNode number_of_retries="1" name="ComputePathToWaitPose">
-                      <ComputePathToPose goal="{wait_pose}"
-                                         path="{path_to_wait}"
-                                         planner_id="{selected_planner}"/>
-                      <ClearEntireCostmap name="ClearGlobalCostmap-ToWait"
-                                          service_name="global_costmap/clear_entirely_global_costmap"/>
-                    </RecoveryNode>
-                  </RateController>
-
-                  <RecoveryNode number_of_retries="1" name="FollowPathToWait">
-                    <FollowPath path="{path_to_wait}" controller_id="FollowPath"/>
-                    <ClearEntireCostmap name="ClearLocalCostmap-ToWait"
-                                        service_name="local_costmap/clear_entirely_local_costmap"/>
+                <RateController hz="1.0">
+                  <RecoveryNode number_of_retries="1" name="ComputePathToFinalGoalDirect">
+                    <ComputePathToPose goal="{final_goal}"
+                                      path="{path_to_final_direct}"
+                                      planner_id="{selected_planner}"/>
+                    <ClearEntireCostmap name="ClearGlobalCostmap-Direct"
+                                        service_name="global_costmap/clear_entirely_global_costmap"/>
                   </RecoveryNode>
-                </PipelineSequence>
+                </RateController>
 
-                <SetConnectorStage stage="AT_WAIT_BEFORE_DOWN"
-                                   yield_once="true"
-                                   connector_stage="{connector_stage}"/>
-
-                <SetConnectorStage stage="LOWERING"
-                                   yield_once="false"
-                                   connector_stage="{connector_stage}"/>
-
-                <ExecuteConnectorAction service_name="/connector_action_manager/execute"
-                                        session_id="{connector_id}"
-                                        connector_id="{connector_id}"
-                                        goal="{goal}"
-                                        action_type="{action_type}"
-                                        phase="pre"
-                                        connector_pose="{connector_pose}"
-                                        wait_pose="{wait_pose}"
-                                        exit_pose="{exit_pose}"
-                                        timeout="{down_timeout}"
-                                        cancel_policy="{cancel_policy}"/>
-
-                <IsHeadState expected_state="DOWN_DONE"/>
-
-                <SetConnectorStage stage="DOWN_DONE"
-                                   yield_once="false"
-                                   connector_stage="{connector_stage}"/>
-
-                <SetConnectorStage stage="CROSSING_TO_EXIT"
-                                   yield_once="false"
-                                   connector_stage="{connector_stage}"/>
-
-                <PipelineSequence name="NavigateToExitPose">
-                  <PlannerSelector selected_planner="{selected_planner}"
-                                   default_planner="TopoPlanner"/>
-
-                  <RateController hz="1.0">
-                    <RecoveryNode number_of_retries="1" name="ComputePathToExitPose">
-                      <ComputePathToPose goal="{exit_pose}"
-                                         path="{path_to_exit}"
-                                         planner_id="{selected_planner}"/>
-                      <ClearEntireCostmap name="ClearGlobalCostmap-ToExit"
-                                          service_name="global_costmap/clear_entirely_global_costmap"/>
-                    </RecoveryNode>
-                  </RateController>
-
-                  <RecoveryNode number_of_retries="1" name="FollowPathToExit">
-                    <FollowPath path="{path_to_exit}" controller_id="FollowPath"/>
-                    <ClearEntireCostmap name="ClearLocalCostmap-ToExit"
-                                        service_name="local_costmap/clear_entirely_local_costmap"/>
-                  </RecoveryNode>
-                </PipelineSequence>
-
-                <SetConnectorStage stage="AT_EXIT_BEFORE_UP"
-                                   yield_once="true"
-                                   connector_stage="{connector_stage}"/>
-
-                <SetConnectorStage stage="WAITING_FOR_UP"
-                                   yield_once="false"
-                                   connector_stage="{connector_stage}"/>
-
-                <ExecuteConnectorAction service_name="/connector_action_manager/execute"
-                                        session_id="{connector_id}"
-                                        connector_id="{connector_id}"
-                                        goal="{goal}"
-                                        action_type="{action_type}"
-                                        phase="passed"
-                                        connector_pose="{connector_pose}"
-                                        wait_pose="{wait_pose}"
-                                        exit_pose="{exit_pose}"
-                                        timeout="{up_monitor_timeout}"
-                                        cancel_policy="{cancel_policy}"/>
-
-                <IsHeadState expected_state="UP_DONE"/>
-
-                <SetConnectorStage stage="UP_DONE"
-                                   yield_once="false"
-                                   connector_stage="{connector_stage}"/>
-
-                <ExecuteConnectorAction service_name="/connector_action_manager/execute"
-                                        session_id="{connector_id}"
-                                        connector_id="{connector_id}"
-                                        goal="{goal}"
-                                        action_type="{action_type}"
-                                        phase="end"
-                                        connector_pose="{connector_pose}"
-                                        wait_pose="{wait_pose}"
-                                        exit_pose="{exit_pose}"
-                                        timeout="5.0"
-                                        cancel_policy="{cancel_policy}"/>
-              </Sequence>
-            </ConnectorTransactionGuard>
-
-            <SetHeadCommand service_name="/connector_action_manager/execute"
-                            down="false"/>
-
-            <PipelineSequence name="NavigateToFinalGoalAfterConnector">
-              <PlannerSelector selected_planner="{selected_planner}"
-                               default_planner="TopoPlanner"/>
-
-              <RateController hz="1.0">
-                <RecoveryNode number_of_retries="1" name="ComputePathAfterConnector">
-                  <ComputePathToPose goal="{final_goal}"
-                                     path="{path_after_connector}"
-                                     planner_id="{selected_planner}"/>
-                  <ClearEntireCostmap name="ClearGlobalCostmap-AfterConnector"
-                                      service_name="global_costmap/clear_entirely_global_costmap"/>
+                <RecoveryNode number_of_retries="1" name="FollowDirectPath">
+                  <FollowPath path="{path_to_final_direct}" controller_id="FollowPath"/>
+                  <ClearEntireCostmap name="ClearLocalCostmap-Direct"
+                                      service_name="local_costmap/clear_entirely_local_costmap"/>
                 </RecoveryNode>
-              </RateController>
-
-              <RecoveryNode number_of_retries="1" name="FollowPathAfterConnector">
-                <FollowPath path="{path_after_connector}" controller_id="FollowPath"/>
-                <ClearEntireCostmap name="ClearLocalCostmap-AfterConnector"
-                                    service_name="local_costmap/clear_entirely_local_costmap"/>
-              </RecoveryNode>
+              </PipelineSequence>
             </PipelineSequence>
-          </Sequence>
-        </ReactiveFallback>
-      </PipelineSequence>
 
+            <Sequence name="ConnectorNavigateThenGoal">
+              <ConnectorTransactionGuard service_name="/connector_action_manager/execute"
+                                        session_id="{connector_id}"
+                                        connector_id="{connector_id}"
+                                        goal="{goal}"
+                                        action_type="{action_type}"
+                                        connector_pose="{connector_pose}"
+                                        wait_pose="{wait_pose}"
+                                        exit_pose="{exit_pose}"
+                                        cancel_policy="{cancel_policy}"
+                                        preempt_cancel_policy="down_if_safe"
+                                        connector_stage="{connector_stage}"
+                                        transaction_active="{connector_transaction_active}">
+                <Sequence name="HeadConnectorCrossingOnly">
+                  <IsConnectorActionRequired need_action="{need_action}"/>
+
+                  <SetConnectorStage stage="APPROACHING_WAIT"
+                                    yield_once="false"
+                                    connector_stage="{connector_stage}"/>
+
+                  <ExecuteConnectorAction service_name="/connector_action_manager/execute"
+                                          session_id="{connector_id}"
+                                          connector_id="{connector_id}"
+                                          goal="{goal}"
+                                          action_type="{action_type}"
+                                          phase="begin"
+                                          connector_pose="{connector_pose}"
+                                          wait_pose="{wait_pose}"
+                                          exit_pose="{exit_pose}"
+                                          timeout="5.0"
+                                          cancel_policy="{cancel_policy}"/>
+
+                  <PipelineSequence name="NavigateToWaitPose">
+                    <PlannerSelector selected_planner="{selected_planner}"
+                                    default_planner="TopoPlanner"/>
+
+                    <RateController hz="1.0">
+                      <RecoveryNode number_of_retries="1" name="ComputePathToWaitPose">
+                        <ComputePathToPose goal="{wait_pose}"
+                                          path="{path_to_wait}"
+                                          planner_id="{selected_planner}"/>
+                        <ClearEntireCostmap name="ClearGlobalCostmap-ToWait"
+                                            service_name="global_costmap/clear_entirely_global_costmap"/>
+                      </RecoveryNode>
+                    </RateController>
+
+                    <RecoveryNode number_of_retries="1" name="FollowPathToWait">
+                      <FollowPath path="{path_to_wait}" controller_id="FollowPath"/>
+                      <ClearEntireCostmap name="ClearLocalCostmap-ToWait"
+                                          service_name="local_costmap/clear_entirely_local_costmap"/>
+                    </RecoveryNode>
+                  </PipelineSequence>
+
+                  <SetConnectorStage stage="AT_WAIT_BEFORE_DOWN"
+                                    yield_once="true"
+                                    connector_stage="{connector_stage}"/>
+
+                  <SetConnectorStage stage="LOWERING"
+                                    yield_once="false"
+                                    connector_stage="{connector_stage}"/>
+
+                  <ExecuteConnectorAction service_name="/connector_action_manager/execute"
+                                          session_id="{connector_id}"
+                                          connector_id="{connector_id}"
+                                          goal="{goal}"
+                                          action_type="{action_type}"
+                                          phase="pre"
+                                          connector_pose="{connector_pose}"
+                                          wait_pose="{wait_pose}"
+                                          exit_pose="{exit_pose}"
+                                          timeout="{down_timeout}"
+                                          cancel_policy="{cancel_policy}"/>
+
+                  <IsHeadState expected_state="DOWN_DONE"/>
+
+                  <SetConnectorStage stage="DOWN_DONE"
+                                    yield_once="false"
+                                    connector_stage="{connector_stage}"/>
+
+                  <SetConnectorStage stage="CROSSING_TO_EXIT"
+                                    yield_once="false"
+                                    connector_stage="{connector_stage}"/>
+
+                  <PipelineSequence name="NavigateToExitPose">
+                    <PlannerSelector selected_planner="{selected_planner}"
+                                    default_planner="TopoPlanner"/>
+
+                    <RateController hz="1.0">
+                      <RecoveryNode number_of_retries="1" name="ComputePathToExitPose">
+                        <ComputePathToPose goal="{exit_pose}"
+                                          path="{path_to_exit}"
+                                          planner_id="{selected_planner}"/>
+                        <ClearEntireCostmap name="ClearGlobalCostmap-ToExit"
+                                            service_name="global_costmap/clear_entirely_global_costmap"/>
+                      </RecoveryNode>
+                    </RateController>
+
+                    <RecoveryNode number_of_retries="1" name="FollowPathToExit">
+                      <FollowPath path="{path_to_exit}" controller_id="FollowPath"/>
+                      <ClearEntireCostmap name="ClearLocalCostmap-ToExit"
+                                          service_name="local_costmap/clear_entirely_local_costmap"/>
+                    </RecoveryNode>
+                  </PipelineSequence>
+
+                  <SetConnectorStage stage="AT_EXIT_BEFORE_UP"
+                                    yield_once="true"
+                                    connector_stage="{connector_stage}"/>
+
+                  <SetConnectorStage stage="WAITING_FOR_UP"
+                                    yield_once="false"
+                                    connector_stage="{connector_stage}"/>
+
+                  <ExecuteConnectorAction service_name="/connector_action_manager/execute"
+                                          session_id="{connector_id}"
+                                          connector_id="{connector_id}"
+                                          goal="{goal}"
+                                          action_type="{action_type}"
+                                          phase="passed"
+                                          connector_pose="{connector_pose}"
+                                          wait_pose="{wait_pose}"
+                                          exit_pose="{exit_pose}"
+                                          timeout="{up_monitor_timeout}"
+                                          cancel_policy="{cancel_policy}"/>
+
+                  <IsHeadState expected_state="UP_DONE"/>
+
+                  <SetConnectorStage stage="UP_DONE"
+                                    yield_once="false"
+                                    connector_stage="{connector_stage}"/>
+
+                  <ExecuteConnectorAction service_name="/connector_action_manager/execute"
+                                          session_id="{connector_id}"
+                                          connector_id="{connector_id}"
+                                          goal="{goal}"
+                                          action_type="{action_type}"
+                                          phase="end"
+                                          connector_pose="{connector_pose}"
+                                          wait_pose="{wait_pose}"
+                                          exit_pose="{exit_pose}"
+                                          timeout="5.0"
+                                          cancel_policy="{cancel_policy}"/>
+                </Sequence>
+              </ConnectorTransactionGuard>
+
+              <SetHeadCommand service_name="/connector_action_manager/execute"
+                              down="false"/>
+
+              <PipelineSequence name="NavigateToFinalGoalAfterConnector">
+                <PlannerSelector selected_planner="{selected_planner}"
+                                default_planner="TopoPlanner"/>
+
+                <RateController hz="1.0">
+                  <RecoveryNode number_of_retries="1" name="ComputePathAfterConnector">
+                    <ComputePathToPose goal="{final_goal}"
+                                      path="{path_after_connector}"
+                                      planner_id="{selected_planner}"/>
+                    <ClearEntireCostmap name="ClearGlobalCostmap-AfterConnector"
+                                        service_name="global_costmap/clear_entirely_global_costmap"/>
+                  </RecoveryNode>
+                </RateController>
+
+                <RecoveryNode number_of_retries="1" name="FollowPathAfterConnector">
+                  <FollowPath path="{path_after_connector}" controller_id="FollowPath"/>
+                  <ClearEntireCostmap name="ClearLocalCostmap-AfterConnector"
+                                      service_name="local_costmap/clear_entirely_local_costmap"/>
+                </RecoveryNode>
+              </PipelineSequence>
+            </Sequence>
+          </ReactiveFallback>
+
+        </PipelineSequence>
+        <ReConnectorCost service_name="TopoPlanner/re_connector_cost"/>
+      </Sequence>
+  
       <ReactiveFallback name="RecoveryFallback">
         <GoalUpdated/>
         <RoundRobin name="RecoveryActions">
@@ -236,6 +240,8 @@
                   looking_radius="0.5"
                   backup_dist="0.20"
                   backup_speed="0.1"/>
+          
+          <SwitchRouteMode service_name="TopoPlanner/switch_route_mode" connector_id="{connector_id}"/>
         </RoundRobin>
       </ReactiveFallback>
     </RecoveryNode>

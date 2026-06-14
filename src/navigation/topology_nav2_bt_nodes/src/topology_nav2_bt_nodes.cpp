@@ -986,17 +986,100 @@ void IsHeadState::onHalted()
     last_head_state_);
 }
 
+// ------------------------------------------------------------------------ //
+
+SwitchRouteMode::SwitchRouteMode(
+  const std::string & service_node_name,
+  const BT::NodeConfiguration & conf)
+: BtServiceNode<topology_global_planner::srv::SwitchRouteMode>(service_node_name, conf)
+{
+}
+
+BT::PortsList SwitchRouteMode::providedPorts()
+{
+  return providedBasicPorts(
+    {
+      BT::InputPort<std::string>(
+        "service_name",
+        std::string("TopoPlanner/switch_route_mode"),
+        "Topology switch route mode service name"),
+      BT::InputPort<std::string>("connector_id")
+    });
+}
+
+void SwitchRouteMode::on_tick()
+{
+  request_->connector_id.clear();
+
+  if (!getInput("connector_id", request_->connector_id)) {
+    RCLCPP_ERROR(node_->get_logger(), "SwitchRouteMode missing input port 'connector_id'");
+    return;
+  }
+
+  if (request_->connector_id.empty()) {
+    RCLCPP_ERROR(node_->get_logger(), "SwitchRouteMode got empty connector_id");
+    return;
+  }
+
+  RCLCPP_WARN(node_->get_logger(), "SwitchRouteMode request: connector_id='%s'", request_->connector_id.c_str());
+}
+
+BT::NodeStatus SwitchRouteMode::on_completion(
+  std::shared_ptr<topology_global_planner::srv::SwitchRouteMode::Response> response)
+{
+  if (!response->success) {
+    RCLCPP_WARN(node_->get_logger(), "SwitchRouteMode failed");
+    return BT::NodeStatus::FAILURE;
+  }
+
+  RCLCPP_WARN(node_->get_logger(), "SwitchRouteMode success");
+  return BT::NodeStatus::SUCCESS;
+}
+
+// ------------------------------------------------------------------------ //
+
+ReConnectorCost::ReConnectorCost(
+  const std::string & service_node_name,
+  const BT::NodeConfiguration & conf)
+: BtServiceNode<topology_global_planner::srv::RestoreConnectorCost>(
+    service_node_name, conf)
+{
+}
+
+BT::PortsList ReConnectorCost::providedPorts()
+{
+  return providedBasicPorts({});
+}
+
+void ReConnectorCost::on_tick()
+{
+  request_ = std::make_shared<topology_global_planner::srv::RestoreConnectorCost::Request>();
+  RCLCPP_WARN(node_->get_logger(), "ReConnectorCost request");
+}
+
+BT::NodeStatus ReConnectorCost::on_completion(
+  std::shared_ptr<topology_global_planner::srv::RestoreConnectorCost::Response> response)
+{
+  if (response->success) {
+    RCLCPP_WARN(node_->get_logger(), "ReConnectorCost success");
+    return BT::NodeStatus::SUCCESS;
+  }
+
+  RCLCPP_ERROR(node_->get_logger(), "ReConnectorCost failed");
+  return BT::NodeStatus::FAILURE;
+}
+
 }  // namespace nav2_behavior_tree
 
 BT_REGISTER_NODES(factory)
 {
   factory.registerNodeType<nav2_behavior_tree::QueryTopologyRoute>("QueryTopologyRoute");
-  factory.registerNodeType<nav2_behavior_tree::IsConnectorActionRequired>(
-    "IsConnectorActionRequired");
+  factory.registerNodeType<nav2_behavior_tree::IsConnectorActionRequired>("IsConnectorActionRequired");
   factory.registerNodeType<nav2_behavior_tree::SetConnectorStage>("SetConnectorStage");
   factory.registerNodeType<nav2_behavior_tree::SetHeadCommand>("SetHeadCommand");
-  factory.registerNodeType<nav2_behavior_tree::ConnectorTransactionGuard>(
-    "ConnectorTransactionGuard");
+  factory.registerNodeType<nav2_behavior_tree::ConnectorTransactionGuard>("ConnectorTransactionGuard");
   factory.registerNodeType<nav2_behavior_tree::ExecuteConnectorAction>("ExecuteConnectorAction");
   factory.registerNodeType<nav2_behavior_tree::IsHeadState>("IsHeadState");
+  factory.registerNodeType<nav2_behavior_tree::SwitchRouteMode>("SwitchRouteMode");
+  factory.registerNodeType<nav2_behavior_tree::ReConnectorCost>("ReConnectorCost");
 }
