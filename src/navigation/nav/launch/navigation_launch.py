@@ -18,22 +18,25 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable, TimerAction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch_ros.actions import LoadComposableNodes
 from launch_ros.actions import Node
+from launch_ros.descriptions import ComposableNode
 from nav2_common.launch import RewrittenYaml
+from launch_ros.actions import LoadComposableNodes,ComposableNodeContainer
 
 
 def generate_launch_description():
     # Get the launch directory
-    topo_bt_xml = os.path.join(
-        get_package_share_directory('topology_nav2_bt_nodes'),
-        'config',
-        'topo_nav_to_pose.xml')
 
     namespace = LaunchConfiguration('namespace')
     use_sim_time = LaunchConfiguration('use_sim_time')
     autostart = LaunchConfiguration('autostart')
     params_file = LaunchConfiguration('params_file')
+    use_composition = LaunchConfiguration('use_composition')
+    container_name = LaunchConfiguration('container_name')
+    container_name_full = (namespace, '/', container_name)
     use_respawn = LaunchConfiguration('use_respawn')
     log_level = LaunchConfiguration('log_level')
 
@@ -60,8 +63,8 @@ def generate_launch_description():
     # Create our own temporary YAML files that include substitutions
     param_substitutions = {
         'use_sim_time': use_sim_time,
-        'autostart': autostart,
-        'default_nav_to_pose_bt_xml': topo_bt_xml}
+        'autostart': autostart
+    }
 
     configured_params = RewrittenYaml(
             source_file=params_file,
@@ -91,6 +94,14 @@ def generate_launch_description():
         'autostart', default_value='true',
         description='Automatically startup the nav2 stack')
 
+    declare_use_composition_cmd = DeclareLaunchArgument(
+        'use_composition', default_value='True',
+        description='Use composed bringup if True')
+
+    declare_container_name_cmd = DeclareLaunchArgument(
+        'container_name', default_value='nav2_container',
+        description='the name of conatiner that nodes will load in if use composition')
+
     declare_use_respawn_cmd = DeclareLaunchArgument(
         'use_respawn', default_value='False',
         description='Whether to respawn if a node crashes. Applied when composition is disabled.')
@@ -98,6 +109,77 @@ def generate_launch_description():
     declare_log_level_cmd = DeclareLaunchArgument(
         'log_level', default_value='info',
         description='log level')
+
+    container = ComposableNodeContainer(
+        name='nav2_container',
+        namespace='',
+        package='rclcpp_components',
+        executable='component_container',
+        output='screen',
+        parameters=[params_file, {'autostart': True}],
+    )
+
+    load_composable_nodes = LoadComposableNodes(
+        target_container='nav2_container',
+        composable_node_descriptions=[
+            ComposableNode(
+                package='nav2_controller',
+                plugin='nav2_controller::ControllerServer',
+                name='controller_server',
+                parameters=[configured_params],
+                remappings=remappings + [('cmd_vel', 'cmd_vel_nav')]),
+            ComposableNode(
+                package='nav2_smoother',
+                plugin='nav2_smoother::SmootherServer',
+                name='smoother_server',
+                parameters=[configured_params],
+                remappings=remappings),
+            ComposableNode(
+                package='nav2_planner',
+                plugin='nav2_planner::PlannerServer',
+                name='planner_server',
+                parameters=[configured_params],
+                remappings=remappings),
+            ComposableNode(
+                package='nav2_behaviors',
+                plugin='behavior_server::BehaviorServer',
+                name='behavior_server',
+                parameters=[configured_params],
+                remappings=remappings),
+            ComposableNode(
+                package='nav2_bt_navigator',
+                plugin='nav2_bt_navigator::BtNavigator',
+                name='bt_navigator',
+                parameters=[configured_params],
+                remappings=remappings),
+            ComposableNode(
+                package='nav2_waypoint_follower',
+                plugin='nav2_waypoint_follower::WaypointFollower',
+                name='waypoint_follower',
+                parameters=[configured_params],
+                remappings=remappings),
+            ComposableNode(
+                package='nav2_amcl',
+                plugin='nav2_amcl::AmclNode',
+                name='amcl',
+                parameters=[configured_params],
+                remappings=remappings),
+            ComposableNode(
+                package='nav2_velocity_smoother',
+                plugin='nav2_velocity_smoother::VelocitySmoother',
+                name='velocity_smoother',
+                parameters=[configured_params],
+                remappings=remappings +
+                           [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'cmd_vel')]),
+            ComposableNode(
+                package='nav2_lifecycle_manager',
+                plugin='nav2_lifecycle_manager::LifecycleManager',
+                name='lifecycle_manager_navigation',
+                parameters=[{'use_sim_time': use_sim_time,
+                             'autostart': autostart,
+                             'node_names': lifecycle_nodes}]),
+        ],
+    )
 
     load_nodes = GroupAction(
         actions=[
@@ -187,15 +269,6 @@ def generate_launch_description():
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings +
                         [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'cmd_vel')]),
-            Node(
-                package='connector_action_manager',
-                executable='connector_action_manager_node',
-                name='connector_action_manager',
-                output='screen',
-                respawn=use_respawn,
-                respawn_delay=2.0,
-                parameters=[configured_params],
-                arguments=['--ros-args', '--log-level', log_level]),
             TimerAction(
                 period=3.0,
                 actions=[
@@ -225,8 +298,11 @@ def generate_launch_description():
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_autostart_cmd)
+    ld.add_action(declare_use_composition_cmd)
+    ld.add_action(declare_container_name_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
+    #ld.add_action(container)
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(load_nodes)
