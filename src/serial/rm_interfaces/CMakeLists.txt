@@ -34,6 +34,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/IsAbleToChaseSend.msg"
   "msg/GimbalRegionCmd.msg"
   "msg/RegionArea.msg"
+  "msg/MincoTrajectory.msg"
+  "msg/NavOutput.msg"
   "srv/SetMode.srv"
   "srv/InvincibleInquire.srv"
   DEPENDENCIES

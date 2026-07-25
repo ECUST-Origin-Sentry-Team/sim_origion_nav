@@ -199,6 +199,15 @@ def generate_launch_description():
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings + [('cmd_vel', 'cmd_vel_nav')]),
             Node(
+                package="dog_map",
+                executable="dog_map_node",
+                name="dog_map_node",
+                output="screen",
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                arguments=["--ros-args", "--log-level", log_level],
+                parameters=[configured_params]),
+            Node(
                 package='nav2_smoother',
                 executable='smoother_server',
                 name='smoother_server',

@@ -1,0 +1,11 @@
+<class_libraries>
+    <library path="hero_mpc_controller">
+        <class type="hero_mpc_controller::HeroMpcController" base_class_type="nav2_core::Controller">
+            <description>
+                基于 acados MPC 的全向轮机器人轨迹跟踪控制器。
+                接收 MINCO 多项式轨迹作为参考，使用模型预测控制计算最优速度指令。
+                支持 6 状态动力学模型 (位置、速度) 和加速度控制。
+            </description>
+        </class>
+    </library>
+</class_libraries>

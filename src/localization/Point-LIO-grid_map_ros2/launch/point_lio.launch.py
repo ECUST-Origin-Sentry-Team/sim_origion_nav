@@ -16,6 +16,7 @@ def generate_launch_description():
     # TODO(orduno) Substitute with `PushNodeRemapping`
     #              https://github.com/ros2/launch_ros/issues/56
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
+    point_lio_remappings = remappings + [("Odometry", "odom")]
 
     namespace = LaunchConfiguration("namespace")
     use_rviz = LaunchConfiguration("rviz")
@@ -94,7 +95,7 @@ def generate_launch_description():
                 'preprocess.blind': blind
             }, 
         ],
-        remappings=remappings,
+        remappings=point_lio_remappings,
         output="screen",
     )
 

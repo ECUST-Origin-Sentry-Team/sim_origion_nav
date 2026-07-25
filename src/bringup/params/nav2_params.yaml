@@ -57,6 +57,7 @@ bt_navigator:
     odom_topic: /odom
     bt_loop_duration: 10
     default_server_timeout: 20
+    # default_nav_to_pose_bt_xml: /home/hexinyi/sim/sim_origion_nav/src/navigation/nav/config/navigate_to_pose_w_replanning_and_recovery.xml
     # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
     # nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
     # nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml
@@ -148,8 +149,8 @@ controller_server:
     use_sim_time: True
     controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
-    min_y_velocity_threshold: 0.5
-    min_theta_velocity_threshold: 0.5
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
     failure_tolerance: 1.0
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
@@ -171,42 +172,34 @@ controller_server:
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.3
       yaw_goal_tolerance: 3.14
-    
 
     # FollowPath:
-    #     plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"
-    #     translation_kp: 4.0
-    #     translation_ki: 0.0
-    #     translation_kd: 0.0
-    #     enable_rotation: false
-    #     rotation_kp: 3.0
-    #     rotation_ki: 0.1
-    #     rotation_kd: 0.3
-    #     transform_tolerance: 0.2
-    #     min_max_sum_error: 1.0
-    #     lookahead_dist: 1.0
-    #     use_velocity_scaled_lookahead_dist: true
-    #     lookahead_time: 0.5
-    #     min_lookahead_dist: 0.5
-    #     max_lookahead_dist: 1.0
-    #     use_interpolation: True
-    #     use_rotate_to_heading: false
-    #     use_rotate_to_heading_treshold: 0.1
-    #     min_approach_linear_velocity: 0.0
-    #     approach_velocity_scaling_dist: 1.5
-    #     v_linear_min: -14.5
-    #     v_linear_max: 14.5
-    #     v_angular_min: -100.0
-    #     v_angular_max: 100.0
-    #     curvature_min: 0.4
-    #     curvature_max: 0.7
-    #     reduction_ratio_at_high_curvature: 0.6
-    #     curvature_forward_dist: 1.0
-    #     curvature_backward_dist: 0.3
-    #     max_velocity_scaling_factor_rate: 0.9
+    #   plugin: "hero_mpc_controller::HeroMpcController"
+    #   max_velocity: 2.2
+    #   max_omega: 1.5
+    #   max_acceleration: 3.0
+    #   max_alpha: 1.0
+    #   # MPC 输出为加速度、底盘接口为速度。保留上一帧速度命令才能跨
+    #   # 20 Hz 控制周期正常加速；同时限制其与实测里程计的最大偏差。
+    #   max_command_tracking_error: 0.6
+    #   command_state_timeout: 0.2
+    #   enable_yaw_tracking: false
+    #   reference_yaw: 0.0
+    #   weight_q: [800.0, 800.0, 20.0, 100.0, 100.0, 5.0]
+    #   weight_r: [1.0, 1.0, 0.5]
+    #   carrot_point_index: 8
+    #   trajectory_timeout: 1.0
+    #   trajectory_topic: "smoother_server/minco_polynomial_trajectory"
+    #   collision_check_enabled: true
+    #   collision_check_horizon: 0.8
+    #   collision_cost_threshold: 254
+    #   trajectory_path_match_tolerance: 0.05
+    #   trajectory_path_stamp_tolerance: 0.01
+    #   # 全局路径仍按 1 Hz 更新，但同一目标的新 MINCO 轨迹至少等待
+    #   # 当前轨迹执行 3 s，避免每秒把轨迹相位重新置为 t=0。
+    #   minimum_trajectory_execution_time: 3.0
 
-
-    FollowPath:    
+    FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
       time_steps: 56
       model_dt: 0.06 # 预测时间：0.05*56=2.8s
@@ -231,7 +224,6 @@ controller_server:
       motion_model: "Omni"
       visualize: true
       publish_optimal_trajectory : true
-
       TrajectoryVisualizer:
         trajectory_step: 5
         time_step: 3
@@ -260,7 +252,7 @@ controller_server:
       PathAlignCritic:
         enabled: true
         cost_power: 2   #1  改大转弯变好？
-        cost_weight: 8.0 #14.0 
+        cost_weight: 8.0 #14.0
         max_path_occupancy_ratio: 0.05
         trajectory_point_step: 2
         threshold_to_consider: 0.40
@@ -276,113 +268,150 @@ controller_server:
         twirling_cost_power: 1
         twirling_cost_weight: 10.0
 
+dog_map_node:
+    ros__parameters:
+      use_sim_time: true
+      cloud_topic: "/livox/lidar/pointcloud"
+      target_frame: "map"
+      base_frame: "base_link_fake"
+      transform_timeout: 0.2
+      transform_queue_size: 30
+      half_map_size: 10.0 #以车为中心的局部地图,也就是点云分析范围
+      resolution_z: 0.01 #z方向分辨率,用于高层分析
+      # 仿真 URDF: base_link -> chassis z=-0.6 m，车轮半径约 0.0758 m
+      ground_z_in_base: -0.676
+      min_obstacle_height: 0.091 #局部地面以上的最小障碍高度
+      max_obstacle_height: 0.7 #最高点云高度,高于此数值的过滤
+      min_obstacle_column_height: 0.06 #过滤低于6cm的竖向噪声
+      frame_save: 3 # 地图记忆帧数
+      LOG_OCC_HIT_mid360: 34
+      LOG_OCC_FREE: -20
+      THR_OCC: 30
+      MAX_LOG_MID360: 34
+      MIN_LOG: 5
+      map_yaml_path: "/home/hexinyi/sim/sim_origion_nav/src/bringup/map/rmuc_2025_normalized.yaml"
+
 local_costmap:
   local_costmap:
     ros__parameters:
-      update_frequency: 10.0
-      publish_frequency: 5.0
+      use_sim_time: true
+      update_frequency: 20.0
+      publish_frequency: 10.0
       global_frame: odom
       robot_base_frame: base_link_fake
-      #robot_base_frame: base_link
-      use_sim_time: True
       rolling_window: true
-      width: 9
-      height: 9
-      resolution: 0.05
-      robot_radius: 0.15 #0.15
-      plugins: ["static_layer","obstacle_layer", "inflation_layer"]
-      inflation_layer:
-        plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 5.0
-        inflation_radius: 0.55 #0.5
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: true
-        observation_sources: livox 
-        max_obstacle_height: 1.0
-        min_obstacle_height: -1.0
-        # rplidar:
-        #   topic: /rplidar/scan
-        #   max_obstacle_height: 1.0
-        #   min_obstacle_height: -1.0
-        #   clearing: True
-        #   marking: True
-        #   data_type: "LaserScan"
-        #   raytrace_max_range: 3.0
-        #   raytrace_min_range: 0.0
-        #   obstacle_max_range: 2.5
-        #   obstacle_min_range: 0.0
-        livox:
-          topic: /scan
-          max_obstacle_height: 1.0
-          min_obstacle_height: -1.0
-          clearing: True
-          marking: True
-          data_type: "LaserScan"
-          raytrace_max_range: 10.0
-          raytrace_min_range: 0.1
-          obstacle_max_range: 10.0
-          obstacle_min_range: 0.1
-      # voxel_layer:
-      #   plugin: "nav2_costmap_2d::VoxelLayer"
-      #   enabled: True
-      #   publish_voxel_map: True
-      #   origin_z: -0.55
-      #   z_resolution: 0.05
-      #   z_voxels: 16
-      #   min_obstacle_height: 1.0
-      #   max_obstacle_height: 1.0
-      #   mark_threshold: 0
-      #   observation_sources: pointcloud
-      #   pointcloud:
-      #     topic: /segmentation/obstacle
-      #     min_obstacle_height: -1.0
-      #     max_obstacle_height: 1.0
-      #     clearing: True
-      #     marking: True
-      #     data_type: "PointCloud2"
-      #     raytrace_max_range: 5.0
-      #     raytrace_min_range: 0.0
-      #     obstacle_max_range: 3.0
-      #     obstacle_min_range: 0.0
-
+      width: 5
+      height: 5
+      resolution: 0.025
+      robot_radius: 0.17
+      plugins: ["static_layer","fast_layer", "inflation_layer"]
+      fast_layer:
+        plugin: fast_layer::FastLayer
+        pointcloud_topic: /rog_map/inf_occ
+        pointcloud_timeout: 0.5
+        transform_timeout: 0.1
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
-      always_send_full_costmap: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 2.5
+        inflation_radius: 0.40
+      always_send_full_costmap: true
+
+# local_costmap:
+#   local_costmap:
+#     ros__parameters:
+#       update_frequency: 10.0
+#       publish_frequency: 5.0
+#       global_frame: odom
+#       robot_base_frame: base_link_fake
+#       #robot_base_frame: base_link
+#       use_sim_time: True
+#       rolling_window: true
+#       width: 9
+#       height: 9
+#       resolution: 0.05
+#       robot_radius: 0.15 #0.15
+#       plugins: ["static_layer","obstacle_layer", "inflation_layer"]
+#       inflation_layer:
+#         plugin: "nav2_costmap_2d::InflationLayer"
+#         cost_scaling_factor: 5.0
+#         inflation_radius: 0.55 #0.5
+#       obstacle_layer:
+#         plugin: "nav2_costmap_2d::ObstacleLayer"
+#         enabled: true
+#         observation_sources: livox
+#         max_obstacle_height: 1.0
+#         min_obstacle_height: -1.0
+#         # rplidar:
+#         #   topic: /rplidar/scan
+#         #   max_obstacle_height: 1.0
+#         #   min_obstacle_height: -1.0
+#         #   clearing: True
+#         #   marking: True
+#         #   data_type: "LaserScan"
+#         #   raytrace_max_range: 3.0
+#         #   raytrace_min_range: 0.0
+#         #   obstacle_max_range: 2.5
+#         #   obstacle_min_range: 0.0
+#         livox:
+#           topic: /scan
+#           max_obstacle_height: 1.0
+#           min_obstacle_height: -1.0
+#           clearing: True
+#           marking: True
+#           data_type: "LaserScan"
+#           raytrace_max_range: 10.0
+#           raytrace_min_range: 0.1
+#           obstacle_max_range: 10.0
+#           obstacle_min_range: 0.1
+#       # voxel_layer:
+#       #   plugin: "nav2_costmap_2d::VoxelLayer"
+#       #   enabled: True
+#       #   publish_voxel_map: True
+#       #   origin_z: -0.55
+#       #   z_resolution: 0.05
+#       #   z_voxels: 16
+#       #   min_obstacle_height: 1.0
+#       #   max_obstacle_height: 1.0
+#       #   mark_threshold: 0
+#       #   observation_sources: pointcloud
+#       #   pointcloud:
+#       #     topic: /segmentation/obstacle
+#       #     min_obstacle_height: -1.0
+#       #     max_obstacle_height: 1.0
+#       #     clearing: True
+#       #     marking: True
+#       #     data_type: "PointCloud2"
+#       #     raytrace_max_range: 5.0
+#       #     raytrace_min_range: 0.0
+#       #     obstacle_max_range: 3.0
+#       #     obstacle_min_range: 0.0
+
+      # static_layer:
+      #   plugin: "nav2_costmap_2d::StaticLayer"
+      #   map_subscribe_transient_local: True
+      # always_send_full_costmap: True
 
 global_costmap:
   global_costmap:
     ros__parameters:
-      update_frequency: 10.0
-      publish_frequency: 5.0
+      transform_tolerance: 1.0
+      use_sim_time: true
+      update_frequency: 10.0 # 5->10
+      publish_frequency: 5.0 # 2->6
       global_frame: map
       robot_base_frame: base_link_fake
-      #robot_base_frame: base_link
-      use_sim_time: True
-      robot_radius: 0.15
+      robot_radius: 0.17
       resolution: 0.05
-      track_unknown_space: True
-      static_map: True
-      #plugins: ["static_layer", "obstacle_layer","inflation_layer"]
-      plugins: ["static_layer", "inflation_layer"]
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: False
-        observation_sources: livox 
-        max_obstacle_height: 100.0
-        min_obstacle_height: -100.0
-        livox:
-          topic: /scan
-          max_obstacle_height: 100.0
-          min_obstacle_height: -100.0
-          clearing: True
-          marking: True
-          data_type: "LaserScan"
-          raytrace_max_range: 10.0
-          raytrace_min_range: 0.1
-          obstacle_max_range: 10.0
-          obstacle_min_range: 0.1
+      track_unknown_space: true
+      plugins: ["static_layer","fast_layer","inflation_layer"]
+      fast_layer:
+        plugin: fast_layer::FastLayer
+        pointcloud_topic: /rog_map/inf_occ
+        pointcloud_timeout: 0.5
+        transform_timeout: 0.1
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -390,9 +419,51 @@ global_costmap:
         map_topic: /map
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 5.0 #10.0 #20.0
-        inflation_radius: 0.5 #12.0 #0.55     
-        always_send_full_costmap: True
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.5
+      always_send_full_costmap: true
+# global_costmap:
+#   global_costmap:
+#     ros__parameters:
+#       update_frequency: 10.0
+#       publish_frequency: 5.0
+#       global_frame: map
+#       robot_base_frame: base_link_fake
+#       #robot_base_frame: base_link
+#       use_sim_time: True
+#       robot_radius: 0.15
+#       resolution: 0.05
+#       track_unknown_space: True
+#       static_map: True
+#       #plugins: ["static_layer", "obstacle_layer","inflation_layer"]
+#       plugins: ["static_layer", "inflation_layer"]
+#       obstacle_layer:
+#         plugin: "nav2_costmap_2d::ObstacleLayer"
+#         enabled: False
+#         observation_sources: livox
+#         max_obstacle_height: 100.0
+#         min_obstacle_height: -100.0
+#         livox:
+#           topic: /scan
+#           max_obstacle_height: 100.0
+#           min_obstacle_height: -100.0
+#           clearing: True
+#           marking: True
+#           data_type: "LaserScan"
+#           raytrace_max_range: 10.0
+#           raytrace_min_range: 0.1
+#           obstacle_max_range: 10.0
+#           obstacle_min_range: 0.1
+#       static_layer:
+#         plugin: "nav2_costmap_2d::StaticLayer"
+#         map_subscribe_transient_local: True
+#         track_unknown_space: True
+#         map_topic: /map
+#       inflation_layer:
+#         plugin: "nav2_costmap_2d::InflationLayer"
+#         cost_scaling_factor: 5.0 #10.0 #20.0
+#         inflation_radius: 0.5 #12.0 #0.55
+#         always_send_full_costmap: True
 
 
 
@@ -447,7 +518,6 @@ planner_server:
       allow_unknown: true
       use_final_approach_orientation: true
 
-
 smoother_server:
   ros__parameters:
     use_sim_time: True
@@ -457,6 +527,74 @@ smoother_server:
       tolerance: 1.0e-10
       max_its: 1000
       do_refinement: True
+
+# smoother_server:
+#   ros__parameters:
+#     use_sim_time: true
+#     costmap_topic: global_costmap/costmap_raw
+#     footprint_topic: global_costmap/published_footprint
+#     robot_base_frame: base_link_fake
+#     transform_tolerance: 0.1
+# # 平滑器插件列表
+#     smoother_plugins: ["minco_smoother"]
+#     # MINCO 平滑器配置
+#     minco_smoother:
+#       # plugin: "we_smoother/BSplineSmoother"
+#       plugin: "pb_minco/MincoSmoother"
+#       odom_topic: "/odom"
+#       # ========== 第一阶段优化参数：优化轨迹形状 ==========
+#       stage1_weight_smooth: 1.0       # 阶段1 平滑性权重
+#       stage1_weight_obstacle: 80.0    # 阶段1 避障权重
+#       stage1_weight_feasibility: 15.0 # 阶段1动力学可行性权重
+#       stage1_weight_time: 5.0         # 阶段1 时间正则化权重
+#       stage1_weight_mean_time: 5.0    # 阶段1 平均时间约束权重
+#       stage1_weight_reference: 20.0  # 锚定原始路径内点，抑制弯道切角
+#       stage1_max_iterations: 250      # 阶段1 最大迭代次数
+#       # ========== 第二阶段优化权重：优化动力学性质 ==========
+#       weight_smooth: 1.0           # 平滑性权重
+#       weight_obstacle: 200.0        # footprint 外接圆的 ESDF 避障权重
+#       weight_feasibility: 50.0      # 动力学可行性权重
+#       weight_time: 5.0              # 时间正则化权重
+#       weight_mean_time: 10.0        # 平均时间约束权重
+#       weight_reference: 40.0        # 第二阶段仍以原始路径为参考，防止累计漂移
+#       max_iterations: 350           # L-BFGS 最大迭代次数
+#       g_epsilon: 1.0e-4             # 必须为正，允许梯度收敛
+#       integral_resolution: 16       # 每段积分采样数
+#       min_time: 0.08                # 每段严格最小时间 (s)
+#       validation_dt: 0.02           # 发布前硬验证采样间隔 (s)
+#       obstacle_cost_threshold: 254  # 仅原始致命障碍进入 ESDF，避免重复膨胀
+#       footprint_collision_cost_threshold: 254
+#       unknown_is_obstacle: true
+#       # ========== 平均时间约束参数 ==========
+#       mean_time_lower_bound: 0.9      # T_i 下界 = avg_T * 0.9
+#       mean_time_upper_bound: 1.1      # T_i 上界 = avg_T * 1.1
+#       # ========== 动力学约束 ==========
+#       max_vel: 2.2                 # 最大速度 (m/s)
+#       max_acc: 3.0                 # 最大加速度 (m/s²)
+#       safe_distance: 0.05          # 实际 footprint 外的额外安全裕量 (m)
+#       optimization_clearance_margin: 0.02 # 优化目标比最终硬净空多留2cm
+#       center_clearance_tolerance: 0.005 # ESDF栅格插值容差；真实footprint仍硬检查
+#       # 当前实车位置是不可优化的固定起点。仅当真实 footprint 无碰撞时，
+#       # 允许从有限的额外净空缺口中驶出，并要求很快恢复完整安全裕量。
+#       enable_start_clearance_escape: true
+#       start_escape_max_clearance_deficit: 0.025
+#       start_escape_max_clearance_drop: 0.005
+#       start_escape_max_duration: 1.0
+#       start_escape_max_distance: 0.30
+#       fallback_robot_radius: 0.17  # footprint topic 不可用时；需替换为实测值
+#       footprint_orientation_mode: "fixed"
+#       fixed_footprint_yaw: 0.0
+#       # ========== 路径处理参数 ==========
+#       min_waypoints: 3             # 最少路点数
+#       max_waypoints: 40            # 限制优化维度和最坏执行时间
+#       # ========== 输出参数 ==========
+#       output_dt: 0.05              # 输出 Nav2 Path 采样间隔 (s)
+#       publish_trajectory: true     # 发布轨迹可视化 (话题: minco_trajectory)
+#       # ========== 均匀时间采样参数 ==========
+#       resample_time_resolution: 0.35  # 重采样时间分辨率 (s)
+#       rotation_penalty_weight: 0.1    # 旋转惩罚权重
+#       dense_sample_resolution: 0.1    # 密集采样分辨率 (m)
+
 
 behavior_server:
   ros__parameters:

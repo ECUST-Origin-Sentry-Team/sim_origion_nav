@@ -1,0 +1,95 @@
+# pb_minco_smoother 示例配置
+#
+# 将以下配置添加到您的 Nav2 参数文件中，以使用 MINCO 平滑器插件
+#
+# 使用方式：
+# 1. 确保 pb_minco_smoother 包已编译并安装
+# 2. 在 smoother_server 的配置中添加此插件
+# 3. 确保 global_costmap 和 published_footprint 已正常发布
+
+smoother_server:
+  ros__parameters:
+    # 平滑器插件列表
+    smoother_plugins: ["minco_smoother"]
+    
+    # MINCO 平滑器配置
+    minco_smoother:
+      plugin: "pb_minco/MincoSmoother"
+      
+      # ========== 优化权重 ==========
+      # 平滑性权重（控制轨迹的平滑程度）
+      weight_smooth: 1.0
+      
+      # 避障权重（越大越远离障碍物，但可能使轨迹变长）
+      weight_obstacle: 100.0
+      
+      # 动力学可行性权重（控制速度/加速度约束的严格程度）
+      weight_feasibility: 10.0
+      
+      # 时间正则化权重（越大越偏向快速完成）
+      weight_time: 10.0
+
+      # 原始路径内点保真权重；避障仍可在必要时把轨迹推离参考点
+      weight_reference: 40.0
+      
+      # ========== 动力学约束 ==========
+      # 最大速度 (m/s) - 根据机器人能力设置
+      max_vel: 2.0
+      
+      # 最大加速度 (m/s²) - 根据机器人能力设置
+      max_acc: 2.0
+      
+      # 实际 footprint 外的额外安全裕量 (m)
+      safe_distance: 0.05
+      # 优化器应主动超过最终硬净空，吸收软约束和离散采样误差；必须 > 0
+      optimization_clearance_margin: 0.02
+      # 最终 ESDF 中心净空允许的毫米级离散/插值容差；实际 footprint
+      # 仍逐点进行致命障碍硬检查，且该容差不会超过 safe_distance
+      center_clearance_tolerance: 0.005
+      # 仅当固定起点的真实 footprint 无碰撞时，允许轨迹从略低于额外中心
+      # 裕量的位置受控驶离。普通采样点、恢复后的轨迹以及终点仍使用上面的
+      # 正常净空要求，不会全局放宽。
+      enable_start_clearance_escape: true
+      # 起点最多可缺少的额外中心净空；与 max_clearance_drop 之和不能超过
+      # safe_distance，保证逃逸前缀的中心仍不进入 footprint 外接半径。
+      start_escape_max_clearance_deficit: 0.025
+      # 恢复前允许的 ESDF 数值波动/短暂净空下降上界。
+      start_escape_max_clearance_drop: 0.005
+      # 轨迹必须同时在以下时间和累计路程内恢复正常中心净空。
+      start_escape_max_duration: 1.0
+      start_escape_max_distance: 0.30
+      # footprint topic 尚未到达时使用；必须替换为实测外接半径
+      fallback_robot_radius: 0.17
+      
+      # ========== 优化器参数 ==========
+      # L-BFGS 最大迭代次数
+      max_iterations: 200
+      
+      # 梯度收敛阈值
+      g_epsilon: 0.0001
+      
+      # 每段轨迹的积分采样点数（用于代价计算）
+      integral_resolution: 8
+      min_time: 0.08
+      validation_dt: 0.02
+      # ESDF 只提取原始致命障碍；轨迹中心还会额外加 footprint 半径
+      obstacle_cost_threshold: 254
+      # 真实 footprint 边界检查只把致命栅格判为碰撞，避免重复计算膨胀
+      footprint_collision_cost_threshold: 254
+      unknown_is_obstacle: true
+      
+      # ========== 路径处理参数 ==========
+      # 最少路点数 - 少于此数不进行平滑
+      min_waypoints: 3
+      
+      # 初始每米时间估计 (s/m) - 用于时间分配初始化
+      initial_time_per_meter: 0.5
+      
+      # ========== 输出参数 ==========
+      # 输出轨迹采样间隔 (s)
+      output_dt: 0.1
+      
+      # 是否发布轨迹可视化（话题：minco_trajectory）
+      publish_trajectory: true
+      footprint_orientation_mode: "fixed"
+      fixed_footprint_yaw: 0.0

@@ -1,0 +1,7 @@
+<library path="fast_layer">
+    <class name="fast_layer::FastLayer" type="fast_layer::FastLayer" base_class_type="nav2_costmap_2d::Layer">
+        <description>
+        A costmap layer that marks obstacles based on incoming point clouds.
+        </description>
+    </class>
+</library>

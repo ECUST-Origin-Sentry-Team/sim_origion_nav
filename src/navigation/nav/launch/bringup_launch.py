@@ -94,6 +94,7 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(os.path.join(launch_dir, 'navigation_launch.py')),
             launch_arguments={'namespace': namespace,
                               'use_sim_time': use_sim_time,
+                              'params_file': params_file,
                               'autostart': autostart,
                               'use_composition': use_composition,
                               'use_respawn': use_respawn,

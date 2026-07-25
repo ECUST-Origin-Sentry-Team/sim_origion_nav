@@ -238,6 +238,33 @@ void set_posestamp(T & out)
   }
 }
 
+void set_twiststamp(geometry_msgs::msg::Twist & out)
+{
+  V3D velocity_in_odom;
+  Eigen::Quaterniond orientation;
+  if (!use_imu_as_input) {
+    velocity_in_odom = kf_output.x_.vel;
+    orientation = Eigen::Quaterniond(kf_output.x_.rot);
+    out.angular.x = kf_output.x_.omg(0);
+    out.angular.y = kf_output.x_.omg(1);
+    out.angular.z = kf_output.x_.omg(2);
+  } else {
+    velocity_in_odom = kf_input.x_.vel;
+    orientation = Eigen::Quaterniond(kf_input.x_.rot);
+    const V3D angular_velocity = input_in.gyro - kf_input.x_.bg;
+    out.angular.x = angular_velocity(0);
+    out.angular.y = angular_velocity(1);
+    out.angular.z = angular_velocity(2);
+  }
+
+  // nav_msgs/Odometry 约定 twist 使用 child_frame_id 表达。滤波器速度位于
+  // odom 坐标系，因此发布前旋转回 aft_mapped/车体坐标系。
+  const V3D velocity_in_body = orientation.conjugate() * velocity_in_odom;
+  out.linear.x = velocity_in_body(0);
+  out.linear.y = velocity_in_body(1);
+  out.linear.z = velocity_in_body(2);
+}
+
 void publish_odometry(
   const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr & pubOdomAftMapped,
   std::shared_ptr<tf2_ros::TransformBroadcaster> & tf_br)
@@ -250,6 +277,7 @@ void publish_odometry(
     odomAftMapped.header.stamp = get_ros_time(lidar_end_time);
   }
   set_posestamp(odomAftMapped.pose.pose);
+  set_twiststamp(odomAftMapped.twist.twist);
 
   pubOdomAftMapped->publish(odomAftMapped);
 

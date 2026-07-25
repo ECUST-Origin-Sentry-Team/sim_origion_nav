@@ -13,6 +13,7 @@
 
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include "referee_msg/msg/referee.hpp"
 
 class FakeBaselink : public rclcpp::Node
 {
@@ -49,6 +50,10 @@ public:
             cmd_vel_after_topic_name,10
         );
 
+        stop_chassis_sub = this->create_subscription<referee_msg::msg::Referee>(
+            "/Referee", 1, std::bind(&FakeBaselink::stop_chassis_callback, this, std::placeholders::_1)
+        );
+
         pub_fake_timer = this->create_wall_timer(
             std::chrono::milliseconds(50),std::bind(&FakeBaselink::pub_fake_callback,this)
         );
@@ -83,12 +88,25 @@ public:
         ready = 1;
     }
 
+    void stop_chassis_callback(const referee_msg::msg::Referee::SharedPtr referee_msg)
+    {
+        should_stop = (referee_msg->head_status == 0);
+    }
+
     void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr cmd_vel)
     {
         // if (local_plan_last.empty())
         // {
         //     return;
         // }
+        geometry_msgs::msg::Twist cmd_vel_after;
+        if (should_stop) {
+            cmd_vel_after.angular.z = 0.0;
+            cmd_vel_after.linear.x = 0.0;
+            cmd_vel_after.linear.y = 0.0;
+            cmd_vel_after_pub->publish(cmd_vel_after);
+            return;
+        }
 
         geometry_msgs::msg::TransformStamped odom_to_base_link;
         try
@@ -122,7 +140,7 @@ public:
         double base_link_angle = tf2::getYaw(odom_to_base_link.transform.rotation);
         double angle_diff = base_link_angle - tf2::getYaw(fake_q);
 
-        geometry_msgs::msg::Twist cmd_vel_after;
+
         cmd_vel_after.angular.z = cmd_vel->angular.z ;
         cmd_vel_after.linear.x = cmd_vel->linear.x * cos(angle_diff) + cmd_vel->linear.y * sin(angle_diff);
         cmd_vel_after.linear.y = -cmd_vel->linear.x * sin(angle_diff) + cmd_vel->linear.y * cos(angle_diff);
@@ -187,6 +205,7 @@ private:
     std::int8_t ready;
 
     float forward_distance;
+    bool should_stop{false};
 
     geometry_msgs::msg::Quaternion fake_q;
     geometry_msgs::msg::Vector3 base_link_translation;
@@ -197,6 +216,7 @@ private:
 
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub;
     rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr local_plan_sub;
+    rclcpp::Subscription<referee_msg::msg::Referee>::SharedPtr stop_chassis_sub;
 
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_after_pub;
 

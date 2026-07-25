@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>hero_mpc_controller</name>
+  <version>1.0.0</version>
+  <description>
+    适配 ROS 2 Humble / Nav2 Humble 的 acados MPC Controller 插件。
+    实现了全向轮机器人的 6 状态动力学轨迹跟踪控制。
+    接收 MINCO 多项式轨迹作为参考输入。
+  </description>
+  <maintainer email="1753809506@qq.com">Jinbo Liu</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- ROS 2 核心依赖 -->
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>pluginlib</depend>
+
+  <!-- Nav2 依赖 -->
+  <depend>nav2_core</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>nav2_util</depend>
+
+  <!-- TF2 依赖 -->
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <!-- 消息类型 -->
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>rm_interfaces</depend>
+
+  <!-- 数学库 -->
+  <depend>eigen</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

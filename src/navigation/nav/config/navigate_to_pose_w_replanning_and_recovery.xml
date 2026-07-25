@@ -1,0 +1,102 @@
+<!--
+  This Behavior Tree replans the global path periodically at 1 Hz and it also has
+  recovery actions specific to planning / control as well as general system issues.
+  This will be continuous if a kinematically valid planner is selected.
+
+  Path hand-off rules:
+  - ComputePathToPose only writes raw_path.
+  - SmoothPath only writes candidate_path.
+  - path is updated atomically after smoothing has completed successfully.
+  - If a periodic update fails, a still-valid committed path remains active.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <!--
+          BtNavigator reuses its blackboard between navigation goals.  Reset the
+          committed-path marker whenever the goal changes, so a path belonging to
+          an earlier goal can never be used as the fallback for a new goal.
+        -->
+        <Fallback name="ResetCommittedPathOnGoalUpdate">
+          <Sequence>
+            <GlobalUpdatedGoal/>
+            <SetBlackboard value="empty" output_key="committed_path_state"/>
+          </Sequence>
+          <AlwaysSuccess/>
+        </Fallback>
+
+        <!-- 1 Hz 重新规划，并在规划完成后执行 MINCO 平滑 -->
+        <RateController hz="1.0">
+          <Fallback name="UpdatePathOrKeepCommittedPath">
+            <RecoveryNode number_of_retries="1" name="ComputeAndSmoothPath">
+              <!--
+                候选路径只有在规划、平滑以及 completed 检查全部成功后，
+                才会复制到 FollowPath 使用的 path。
+              -->
+              <Sequence name="ComputeSmoothAndCommitPath">
+                <ComputePathToPose goal="{goal}"
+                                   path="{raw_path}"
+                                   planner_id="GridBased"/>
+                <SmoothPath unsmoothed_path="{raw_path}"
+                            smoothed_path="{candidate_path}"
+                            smoother_id="minco_smoother"
+                            was_completed="{smoothing_completed}"/>
+                <BlackboardCheckBool value_A="{smoothing_completed}"
+                                     value_B="true"
+                                     return_on_mismatch="FAILURE">
+                  <AlwaysSuccess/>
+                </BlackboardCheckBool>
+                <SetBlackboard value="{candidate_path}" output_key="path"/>
+                <SetBlackboard value="ready" output_key="committed_path_state"/>
+              </Sequence>
+
+              <!-- 本次更新失败时清一次全局代价地图并重试 -->
+              <ClearEntireCostmap name="ClearGlobalCostmap-Context"
+                                  service_name="global_costmap/clear_entirely_global_costmap"/>
+            </RecoveryNode>
+
+            <!--
+              周期更新最终失败，但当前目标已有平滑成功的 path 时返回
+              SUCCESS，让 PipelineSequence 继续 tick 正在运行的 FollowPath；
+              继续前还会用全局代价地图确认旧路径目前仍然有效。
+              首次规划尚无 committed path 或旧路径已失效时返回 FAILURE，
+              仍进入恢复。
+            -->
+            <Sequence name="KeepValidCommittedPath">
+              <BlackboardCheckString value_A="{committed_path_state}"
+                                     value_B="ready"
+                                     return_on_mismatch="FAILURE">
+                <AlwaysSuccess/>
+              </BlackboardCheckString>
+              <IsPathValid path="{path}"/>
+            </Sequence>
+          </Fallback>
+        </RateController>
+
+        <!-- 只跟踪已提交的平滑路径 -->
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="FollowPath" goal_checker_id="general_goal_checker"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </PipelineSequence>
+
+      <!-- 总体导航恢复逻辑 -->
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <RoundRobin name="RecoveryActions">
+          <Sequence name="ClearingActions">
+            <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </Sequence>
+
+          <Spin spin_dist="1.57"/>
+
+          <Wait wait_duration="5"/>
+
+          <BackUp backup_dist="0.30" backup_speed="0.05"/>
+        </RoundRobin>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>
