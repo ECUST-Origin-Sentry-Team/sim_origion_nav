@@ -16,6 +16,7 @@
 #define NAV2_BEHAVIORS__PLUGINS__ESCAPE_HPP_
 
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <utility>
 
@@ -40,8 +41,13 @@ namespace nav2_behaviors
     {
     }
     ~Escape() = default;
-    Status onRun(const std::shared_ptr<const EscapeAction::Goal> command) override;
-    Status onCycleUpdate() override;
+    ResultStatus onRun(const std::shared_ptr<const EscapeAction::Goal> command) override;
+    ResultStatus onCycleUpdate() override;
+
+    nav2_core::CostmapInfoType getResourceInfo() override
+    {
+      return nav2_core::CostmapInfoType::LOCAL;
+    }
 
   protected:
     /**

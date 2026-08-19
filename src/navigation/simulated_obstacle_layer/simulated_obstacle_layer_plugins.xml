@@ -1,0 +1,10 @@
+<library path="simulated_obstacle_layer">
+  <class
+    name="simulated_obstacle_layer::SimulatedObstacleLayer"
+    type="simulated_obstacle_layer::SimulatedObstacleLayer"
+    base_class_type="nav2_costmap_2d::Layer">
+    <description>
+      Draws a YAML-sized circular obstacle at a topic-controlled stamped point.
+    </description>
+  </class>
+</library>

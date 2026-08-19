@@ -17,14 +17,14 @@
 namespace nav2_behaviors
 {
 
-  Status Escape::onRun(const std::shared_ptr<const EscapeAction::Goal> command)
+  ResultStatus Escape::onRun(const std::shared_ptr<const EscapeAction::Goal> command)
   {
     if (command->target.z != 0.0)
     {
       RCLCPP_INFO(
           logger_,
           "Backing Z not supported, will only move in X and Y.");
-      return Status::FAILED;
+      return ResultStatus{Status::FAILED, EscapeAction::Result::INVALID_INPUT};
     }
 
     // Silently ensure that both the speed and direction are negative.
@@ -42,13 +42,13 @@ namespace nav2_behaviors
             transform_tolerance_))
     {
       RCLCPP_ERROR(logger_, "Initial robot pose is not available.");
-      return Status::FAILED;
+      return ResultStatus{Status::FAILED, EscapeAction::Result::TF_ERROR};
     }
 
-    return Status::SUCCEEDED;
+    return ResultStatus{Status::SUCCEEDED, EscapeAction::Result::NONE};
   }
 
-  Status Escape::onCycleUpdate()
+  ResultStatus Escape::onCycleUpdate()
   {
     rclcpp::Duration time_remaining = end_time_ - this->clock_->now();
     if (time_remaining.seconds() < 0.0 && command_time_allowance_.seconds() > 0.0)
@@ -57,7 +57,7 @@ namespace nav2_behaviors
       RCLCPP_WARN(
           logger_,
           "Exceeded time allowance before reaching the DriveOnHeading goal - Exiting DriveOnHeading");
-      return Status::FAILED;
+      return ResultStatus{Status::FAILED, EscapeAction::Result::TIMEOUT};
     }
 
     geometry_msgs::msg::PoseStamped current_pose;
@@ -66,7 +66,7 @@ namespace nav2_behaviors
             this->transform_tolerance_))
     {
       RCLCPP_ERROR(logger_, "Current robot pose is not available.");
-      return Status::FAILED;
+      return ResultStatus{Status::FAILED, EscapeAction::Result::TF_ERROR};
     }
 
     double diff_x = initial_pose_.pose.position.x - current_pose.pose.position.x;
@@ -79,16 +79,18 @@ namespace nav2_behaviors
     if (distance >= hypot(std::fabs(command_x_), std::fabs(command_y_)))
     {
       this->stopRobot();
-      return Status::SUCCEEDED;
+      return ResultStatus{Status::SUCCEEDED, EscapeAction::Result::NONE};
     }
 
-    auto cmd_vel = std::make_unique<geometry_msgs::msg::Twist>();
-    cmd_vel->angular.z = 0.0;
-    cmd_vel->linear.x = command_speed / hypot(std::fabs(command_x_), std::fabs(command_y_)) * std::fabs(command_x_) * (command_x_ > 0 ? 1.0 : -1.0);
-    cmd_vel->linear.y = command_speed / hypot(std::fabs(command_x_), std::fabs(command_y_)) * std::fabs(command_y_) * (command_y_ > 0 ? 1.0 : -1.0);
+    auto cmd_vel = std::make_unique<geometry_msgs::msg::TwistStamped>();
+    cmd_vel->header.stamp = this->clock_->now();
+    cmd_vel->header.frame_id = this->robot_base_frame_;
+    cmd_vel->twist.angular.z = 0.0;
+    cmd_vel->twist.linear.x = command_speed / hypot(std::fabs(command_x_), std::fabs(command_y_)) * std::fabs(command_x_) * (command_x_ > 0 ? 1.0 : -1.0);
+    cmd_vel->twist.linear.y = command_speed / hypot(std::fabs(command_x_), std::fabs(command_y_)) * std::fabs(command_y_) * (command_y_ > 0 ? 1.0 : -1.0);
 
     RCLCPP_INFO(logger_, "Publishing goal: vx = %.2f, vy = %.2f, x = %.2f, y = %.2f",
-                cmd_vel->linear.x, cmd_vel->linear.y, command_x_, command_y_);
+                cmd_vel->twist.linear.x, cmd_vel->twist.linear.y, command_x_, command_y_);
 
     geometry_msgs::msg::Pose2D pose2d;
     pose2d.x = current_pose.pose.position.x;
@@ -99,12 +101,12 @@ namespace nav2_behaviors
     // {
     //   this->stopRobot();
     //   RCLCPP_WARN(this->logger_, "Collision Ahead - Exiting DriveOnHeading");
-    //   return Status::FAILED;
+    //   return ResultStatus{Status::FAILED, EscapeAction::Result::TIMEOUT};
     // }
 
     this->vel_pub_->publish(std::move(cmd_vel));
 
-    return Status::RUNNING;
+    return ResultStatus{Status::RUNNING, EscapeAction::Result::NONE};
   }
 
   bool Escape::isCollisionFree(
@@ -132,7 +134,7 @@ namespace nav2_behaviors
         break;
       }
 
-      if (!this->collision_checker_->isCollisionFree(pose2d, fetch_data))
+      if (!this->local_collision_checker_->isCollisionFree(pose2d, fetch_data))
       {
         return false;
       }

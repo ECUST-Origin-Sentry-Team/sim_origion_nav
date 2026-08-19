@@ -6,7 +6,6 @@
 #include <pcl/common/io.h>
 #include <pcl/filters/passthrough.h>
 #include <ceres/ceres.h>
-#include <ceres/local_parameterization.h>
 #include <ceres/rotation.h>
 
 #include "common/math_utils.h"

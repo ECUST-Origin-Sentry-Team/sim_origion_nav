@@ -52,7 +52,6 @@ namespace small_gicp_localization
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub;
         rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr init_pose_sub;
         rclcpp::Time last_cloud_stamp;
-        rclcpp::TimerBase::SharedPtr publish_timer;
         rclcpp::TimerBase::SharedPtr localization_timer;
 
         std::shared_ptr<tf2_ros::Buffer> buffer;
@@ -62,10 +61,9 @@ namespace small_gicp_localization
         Eigen::Isometry3d init_T;
         Eigen::Isometry3d publish_T;
 
-        void load_pcd_file(const std::string& pcd_file);
+        bool load_pcd_file(const std::string& pcd_file);
         void cloud_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg);
         void init_pose_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr& msg);
-        void publish_transform();
         void perform_localization();
     };
 }

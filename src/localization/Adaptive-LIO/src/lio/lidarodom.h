@@ -2,7 +2,6 @@
 #define LIDAR_ODOM_M_H__
 #include "common/timer/timer.h"
 #include "lio/lidarFactor.h"
-#include "lio/poseParameterization.h"
 
 #include "algo/eskf.hpp"
 #include "algo/static_imu_init.h"

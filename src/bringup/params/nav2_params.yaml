@@ -1,118 +1,15 @@
-# amcl:
-#   ros__parameters:
-#     use_sim_time: True
-#     alpha1: 0.2
-#     alpha2: 0.2
-#     alpha3: 0.2
-#     alpha4: 0.2
-#     alpha5: 0.2
-#     base_frame_id: "aft_mapped"
-#     beam_skip_distance: 0.5
-#     beam_skip_error_threshold: 0.9
-#     beam_skip_threshold: 0.3
-#     do_beamskip: false
-#     global_frame_id: "map"
-#     lambda_short: 0.1
-#     laser_likelihood_max_dist: 2.0
-#     laser_max_range: 100.0
-#     laser_min_range: -1.0
-#     laser_model_type: "likelihood_field"
-#     max_beams: 60
-#     max_particles: 3000
-#     min_particles: 1000
-#     odom_frame_id: "odom"
-#     pf_err: 0.05
-#     pf_z: 0.99
-#     recovery_alpha_fast: 0.0
-#     recovery_alpha_slow: 0.0
-#     resample_interval: 1
-#     robot_model_type: "nav2_amcl::OmniMotionModel"
-#     save_pose_rate: 0.5
-#     sigma_hit: 0.2
-#     tf_broadcast: true
-#     transform_tolerance: 1.0
-#     update_min_a: 0.2
-#     update_min_d: 0.25
-#     z_hit: 0.5
-#     z_max: 0.05
-#     z_rand: 0.5
-#     z_short: 0.05
-#     scan_topic: /scan
-#     map_topic: /map
-#     set_initial_pose: True
-#     # # 核心修正：添加初始偏航角偏移（单位：弧度）
-#     # # 根据之前测量的map与odom的yaw偏差值设置（例如偏差62.45度，对应-1.09弧度）
-#     # initial_pose_yaw: -1.09
-#     # # 可选：放宽初始角度的协方差，让AMCL更快收敛到正确方向
-#     initial_pose_covariance:
-#       x: 0.1
-#       y: 0.1
-#       yaw: 0.1
-
 bt_navigator:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: true
     global_frame: map
     robot_base_frame: base_link_fake
     odom_topic: /odom
     bt_loop_duration: 10
     default_server_timeout: 20
-    # default_nav_to_pose_bt_xml: /home/hexinyi/sim/sim_origion_nav/src/navigation/nav/config/navigate_to_pose_w_replanning_and_recovery.xml
-    # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
-    # nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
-    # nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml
-    # They can be set here or via a RewrittenYaml remap from a parent launch file to Nav2.
+
+    # 只放你自己的 BT 插件
     plugin_lib_names:
-      - nav2_compute_route_bt_node
-      - nav2_get_pose_from_path_action_bt_node
-      - nav2_compute_path_to_pose_action_bt_node
-      - nav2_compute_path_through_poses_action_bt_node
-      - nav2_smooth_path_action_bt_node
-      - nav2_follow_path_action_bt_node
-      - nav2_spin_action_bt_node
-      - nav2_wait_action_bt_node
-      - nav2_assisted_teleop_action_bt_node
-      - nav2_back_up_action_bt_node
-      - nav2_drive_on_heading_bt_node
-      - nav2_clear_costmap_service_bt_node
-      - nav2_is_stuck_condition_bt_node
-      - nav2_goal_reached_condition_bt_node
-      - nav2_goal_updated_condition_bt_node
-      - nav2_globally_updated_goal_condition_bt_node
-      - nav2_is_path_valid_condition_bt_node
-      - nav2_initial_pose_received_condition_bt_node
-      - nav2_reinitialize_global_localization_service_bt_node
-      - nav2_rate_controller_bt_node
-      - nav2_distance_controller_bt_node
-      - nav2_speed_controller_bt_node
-      - nav2_truncate_path_action_bt_node
-      - nav2_truncate_path_local_action_bt_node
-      - nav2_goal_updater_node_bt_node
-      - nav2_recovery_node_bt_node
-      - nav2_pipeline_sequence_bt_node
-      - nav2_round_robin_node_bt_node
-      - nav2_transform_available_condition_bt_node
-      - nav2_time_expired_condition_bt_node
-      - nav2_path_expiring_timer_condition
-      - nav2_distance_traveled_condition_bt_node
-      - nav2_single_trigger_bt_node
-      - nav2_goal_updated_controller_bt_node
-      - nav2_is_battery_low_condition_bt_node
-      - nav2_navigate_through_poses_action_bt_node
-      - nav2_navigate_to_pose_action_bt_node
-      - nav2_remove_passed_goals_action_bt_node
-      - nav2_planner_selector_bt_node
-      - nav2_controller_selector_bt_node
-      - nav2_goal_checker_selector_bt_node
-      - nav2_controller_cancel_bt_node
-      - nav2_path_longer_on_approach_bt_node
-      - nav2_wait_cancel_bt_node
-      - nav2_spin_cancel_bt_node
-      - nav2_back_up_cancel_bt_node
       - nav2_escape_action_bt_node
-      - nav2_assisted_teleop_cancel_bt_node
-      - nav2_drive_on_heading_cancel_bt_node
-      - nav2_is_battery_charging_condition_bt_node
 
 bt_navigator_navigate_through_poses_rclcpp_node:
   ros__parameters:
@@ -152,7 +49,7 @@ controller_server:
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 1.0
-    progress_checker_plugin: "progress_checker"
+    progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
     controller_plugins: ["FollowPath"]
     speed_limit_topic: "/speed_limit"
@@ -173,31 +70,6 @@ controller_server:
       xy_goal_tolerance: 0.3
       yaw_goal_tolerance: 3.14
 
-    # FollowPath:
-    #   plugin: "hero_mpc_controller::HeroMpcController"
-    #   max_velocity: 2.2
-    #   max_omega: 1.5
-    #   max_acceleration: 3.0
-    #   max_alpha: 1.0
-    #   # MPC 输出为加速度、底盘接口为速度。保留上一帧速度命令才能跨
-    #   # 20 Hz 控制周期正常加速；同时限制其与实测里程计的最大偏差。
-    #   max_command_tracking_error: 0.6
-    #   command_state_timeout: 0.2
-    #   enable_yaw_tracking: false
-    #   reference_yaw: 0.0
-    #   weight_q: [800.0, 800.0, 20.0, 100.0, 100.0, 5.0]
-    #   weight_r: [1.0, 1.0, 0.5]
-    #   carrot_point_index: 8
-    #   trajectory_timeout: 1.0
-    #   trajectory_topic: "smoother_server/minco_polynomial_trajectory"
-    #   collision_check_enabled: true
-    #   collision_check_horizon: 0.8
-    #   collision_cost_threshold: 254
-    #   trajectory_path_match_tolerance: 0.05
-    #   trajectory_path_stamp_tolerance: 0.01
-    #   # 全局路径仍按 1 Hz 更新，但同一目标的新 MINCO 轨迹至少等待
-    #   # 当前轨迹执行 3 s，避免每秒把轨迹相位重新置为 t=0。
-    #   minimum_trajectory_execution_time: 3.0
 
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
@@ -304,15 +176,23 @@ local_costmap:
       height: 5
       resolution: 0.025
       robot_radius: 0.17
-      plugins: ["static_layer","fast_layer", "inflation_layer"]
-      fast_layer:
-        plugin: fast_layer::FastLayer
-        pointcloud_topic: /rog_map/inf_occ
-        pointcloud_timeout: 0.5
-        transform_timeout: 0.1
+      plugins: ["static_layer", "simulated_obstacle_layer", "inflation_layer"]
+      # fast_layer:
+      #   plugin: fast_layer::FastLayer
+      #   pointcloud_topic: /rog_map/inf_occ
+      #   pointcloud_timeout: 0.5
+      #   transform_timeout: 0.1
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
+      simulated_obstacle_layer:
+        plugin: "simulated_obstacle_layer::SimulatedObstacleLayer"
+        enabled: true
+        center_topic: /simulated_obstacle/center
+        enabled_topic: /simulated_obstacle/enabled
+        radius: 0.50 # 致命圆本体半径；inflation_layer 会在其外继续膨胀
+        cost: 254
+        transform_tolerance: 0.10
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 2.5
@@ -406,17 +286,26 @@ global_costmap:
       robot_radius: 0.17
       resolution: 0.05
       track_unknown_space: true
-      plugins: ["static_layer","fast_layer","inflation_layer"]
-      fast_layer:
-        plugin: fast_layer::FastLayer
-        pointcloud_topic: /rog_map/inf_occ
-        pointcloud_timeout: 0.5
-        transform_timeout: 0.1
+      #plugins: ["static_layer", "simulated_obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer","inflation_layer"]
+      # fast_layer:
+      #   plugin: fast_layer::FastLayer
+      #   pointcloud_topic: /rog_map/inf_occ
+      #   pointcloud_timeout: 0.5
+      #   transform_timeout: 0.1
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
         track_unknown_space: True
         map_topic: /map
+      simulated_obstacle_layer:
+        plugin: "simulated_obstacle_layer::SimulatedObstacleLayer"
+        enabled: true
+        center_topic: /simulated_obstacle/center
+        enabled_topic: /simulated_obstacle/enabled
+        radius: 0.40 # 与局部层保持一致
+        cost: 254
+        transform_tolerance: 0.10
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 5.0
@@ -486,37 +375,37 @@ planner_server:
   ros__parameters:
     expected_planner_frequency: 5.0 #20.0
     use_sim_time: True
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      tolerance: 0.2
+      use_astar: false
+      allow_unknown: true
+      use_final_approach_orientation: true
+
     # planner_plugins: ["GridBased"]
     # GridBased:
+    #   plugin: "topology_global_planner::TopologyGlobalPlanner"
+    #   topology_yaml: "/home/hexinyi/sim/sim_origion_nav/src/navigation/topology_global_planner/config/topo.yaml"
+    #   use_topology: true
+    #   fallback_to_inner_planner: false
+    #   allow_nearest_region_fallback: false
+    #   region_boundary_tolerance: 0.03
+    #   transform_tolerance: 0.1
+    #   duplicate_pose_tolerance: 0.02
+    #   max_nearest_region_distance: 1.0   # only used when allow_nearest_region_fallback=true
+    #   enforce_region_constraint: true
+    #   region_constraint_tolerance: 0.15   # meters; allow small boundary/portal tolerance
+    #   # Inner planner = your original global planner.
+    #   inner_planner_name: "InnerPlanner"
+    #   inner_planner_plugin: "nav2_navfn_planner/NavfnPlanner"
+
+    # InnerPlanner:
     #   plugin: "nav2_navfn_planner/NavfnPlanner"
     #   tolerance: 0.2
     #   use_astar: false
     #   allow_unknown: true
     #   use_final_approach_orientation: true
-
-    planner_plugins: ["GridBased"]
-    GridBased:
-      plugin: "topology_global_planner::TopologyGlobalPlanner"
-      topology_yaml: "/home/hexinyi/sim/sim_origion_nav/src/navigation/topology_global_planner/config/topo.yaml"
-      use_topology: true
-      fallback_to_inner_planner: false
-      allow_nearest_region_fallback: false
-      region_boundary_tolerance: 0.03
-      transform_tolerance: 0.1
-      duplicate_pose_tolerance: 0.02
-      max_nearest_region_distance: 1.0   # only used when allow_nearest_region_fallback=true
-      enforce_region_constraint: true
-      region_constraint_tolerance: 0.15   # meters; allow small boundary/portal tolerance
-      # Inner planner = your original global planner.
-      inner_planner_name: "InnerPlanner"
-      inner_planner_plugin: "nav2_navfn_planner/NavfnPlanner"
-
-    InnerPlanner:
-      plugin: "nav2_navfn_planner/NavfnPlanner"
-      tolerance: 0.2
-      use_astar: false
-      allow_unknown: true
-      use_final_approach_orientation: true
 
 smoother_server:
   ros__parameters:
@@ -603,17 +492,17 @@ behavior_server:
     cycle_frequency: 10.0
     behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait" , "escape"]
     spin:
-      plugin: "nav2_behaviors/Spin"
+      plugin: "nav2_behaviors::Spin"
     backup:
-      plugin: "nav2_behaviors/BackUp"
+      plugin: "nav2_behaviors::BackUp"
     escape:
-      plugin: "nav2_behaviors/Escape"
+      plugin: "nav2_behaviors::Escape"
     drive_on_heading:
-      plugin: "nav2_behaviors/DriveOnHeading"
+      plugin: "nav2_behaviors::DriveOnHeading"
     wait:
-      plugin: "nav2_behaviors/Wait"
+      plugin: "nav2_behaviors::Wait"
     assisted_teleop:
-      plugin: "nav2_behaviors/AssistedTeleop"
+      plugin: "nav2_behaviors::AssistedTeleop"
     global_frame: odom
     robot_base_frame: base_link_fake
     #robot_base_frame: base_link
@@ -630,16 +519,16 @@ robot_state_publisher:
   ros__parameters:
     use_sim_time: True
 
-waypoint_follower:
-  ros__parameters:
-    use_sim_time: True
-    loop_rate: 5
-    stop_on_failure: false
-    waypoint_task_executor_plugin: "wait_at_waypoint"
-    wait_at_waypoint:
-      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
-      enabled: True
-      waypoint_pause_duration: 200
+# waypoint_follower:
+#   ros__parameters:
+#     use_sim_time: True
+#     loop_rate: 5
+#     stop_on_failure: false
+#     waypoint_task_executor_plugin: "wait_at_waypoint"
+#     wait_at_waypoint:
+#       plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+#       enabled: True
+#       waypoint_pause_duration: 200
 
 velocity_smoother:
   ros__parameters:

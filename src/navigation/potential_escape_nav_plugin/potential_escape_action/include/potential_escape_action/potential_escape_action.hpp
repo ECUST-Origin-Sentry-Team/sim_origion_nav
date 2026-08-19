@@ -23,7 +23,7 @@
 #include <string>
 #include <vector>
 
-#include "behaviortree_cpp_v3/condition_node.h"
+#include "behaviortree_cpp/condition_node.h"
 #include "nav2_behavior_tree/bt_action_node.hpp"
 #include "nav2_msgs/action/back_up.hpp"
 #include "tf2_ros/buffer.h"

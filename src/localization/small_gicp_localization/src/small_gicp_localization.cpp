@@ -8,6 +8,8 @@
 
 #include <tf2_eigen/tf2_eigen.hpp>
 
+#include <stdexcept>
+
 namespace small_gicp_localization
 {
     SmallGicpLocalization::SmallGicpLocalization(const rclcpp::NodeOptions& options)
@@ -46,7 +48,10 @@ namespace small_gicp_localization
         init_T = Eigen::Isometry3d().Identity();
         publish_T = Eigen::Isometry3d().Identity();
 
-        load_pcd_file(pcd_file);
+        if (!load_pcd_file(pcd_file))
+        {
+            throw std::runtime_error("Failed to load the GICP map PCD: " + pcd_file);
+        }
 
         cloud_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(
             cloud_registered_topic,10,std::bind(&SmallGicpLocalization::cloud_callback,this,std::placeholders::_1)
@@ -55,21 +60,24 @@ namespace small_gicp_localization
             "initialpose",10,std::bind(&SmallGicpLocalization::init_pose_callback,this,std::placeholders::_1)
         );
 
-        publish_timer = this->create_wall_timer(
-            std::chrono::milliseconds(100),std::bind(&SmallGicpLocalization::publish_transform,this)
-        );
         localization_timer = this->create_wall_timer(
             std::chrono::milliseconds(500),std::bind(&SmallGicpLocalization::perform_localization,this)
         );
     }
 
-    void SmallGicpLocalization::load_pcd_file(const std::string& pcd_file)
+    bool SmallGicpLocalization::load_pcd_file(const std::string& pcd_file)
     {
+        if (pcd_file.empty())
+        {
+            RCLCPP_ERROR(this->get_logger(), "The pcd_file parameter is empty");
+            return false;
+        }
+
         pcl::PointCloud<pcl::PointXYZI> PCD = pcl::PointCloud<pcl::PointXYZI>();
         if (pcl::io::loadPCDFile<pcl::PointXYZI>(pcd_file,PCD) == -1)
         {
             RCLCPP_ERROR(this->get_logger(),"fail reading %s", pcd_file.c_str());
-            return;
+            return false;
         }
         RCLCPP_INFO(this->get_logger(),"success reading %s",pcd_file.c_str());
         pcl::PassThrough<pcl::PointXYZI> height_filter;
@@ -79,7 +87,14 @@ namespace small_gicp_localization
         height_filter.setNegative(false);
         height_filter.filter(PCD); 
         PCD_downsampled = small_gicp::voxelgrid_sampling_omp<pcl::PointCloud<pcl::PointXYZI>,pcl::PointCloud<pcl::PointCovariance>>(PCD,global_leaf_size);
+        if (!PCD_downsampled || PCD_downsampled->empty())
+        {
+            RCLCPP_ERROR(this->get_logger(), "The filtered GICP map PCD is empty: %s",
+                         pcd_file.c_str());
+            return false;
+        }
         PCD_tree = std::make_shared<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>>(PCD_downsampled, small_gicp::KdTreeBuilderOMP(num_threads));
+        return true;
     }
 
     void SmallGicpLocalization::cloud_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg)
@@ -91,17 +106,14 @@ namespace small_gicp_localization
         pcl::fromROSMsg(*msg, cloud);
 
         cloud_downsampled = small_gicp::voxelgrid_sampling_omp<pcl::PointCloud<pcl::PointXYZI>, pcl::PointCloud<pcl::PointCovariance>>(cloud,registered_leaf_size);
+        if (!cloud_downsampled || cloud_downsampled->size() < static_cast<std::size_t>(num_neighbors))
+        {
+            RCLCPP_WARN(this->get_logger(), "Ignoring point cloud with too few points");
+            ready = 0;
+            return;
+        }
         small_gicp::estimate_covariances_omp(*cloud_downsampled, num_neighbors, num_threads);
         ready = 1;
-    }
-
-    void SmallGicpLocalization::publish_transform()
-    {
-        geometry_msgs::msg::TransformStamped publish_transform = tf2::eigenToTransform(publish_T);
-        publish_transform.header.stamp = last_cloud_stamp + rclcpp::Duration::from_seconds(0.01);
-        publish_transform.header.frame_id = map_frame;
-        publish_transform.child_frame_id = odom_frame;
-        broadcaster->sendTransform(publish_transform);
     }
 
     void SmallGicpLocalization::perform_localization()
@@ -120,11 +132,44 @@ namespace small_gicp_localization
         }
 
         init_T = result.T_target_source;
-        publish_T = result.T_target_source;
+
+        if (cloud_frame_id == odom_frame)
+        {
+            publish_T = result.T_target_source;
+        }
+        else
+        {
+            geometry_msgs::msg::TransformStamped cloud_to_odom;
+            try
+            {
+                cloud_to_odom = buffer->lookupTransform(
+                    cloud_frame_id, odom_frame, last_cloud_stamp,
+                    rclcpp::Duration::from_seconds(0.1));
+            }
+            catch (const std::exception& e)
+            {
+                RCLCPP_WARN(this->get_logger(), "Could not find transform from %s to %s: %s",
+                            cloud_frame_id.c_str(), odom_frame.c_str(), e.what());
+                return;
+            }
+            publish_T = result.T_target_source * tf2::transformToEigen(cloud_to_odom);
+        }
+
+        geometry_msgs::msg::TransformStamped publish_transform = tf2::eigenToTransform(publish_T);
+        publish_transform.header.stamp = last_cloud_stamp;
+        publish_transform.header.frame_id = map_frame;
+        publish_transform.child_frame_id = odom_frame;
+        broadcaster->sendTransform(publish_transform);
     }
 
     void SmallGicpLocalization::init_pose_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr& msg)
     {
+        if (cloud_frame_id.empty())
+        {
+            RCLCPP_WARN(this->get_logger(), "No point cloud received; initial pose was ignored");
+            return;
+        }
+
         Eigen::Isometry3d map_to_base_link = Eigen::Isometry3d::Identity();
         map_to_base_link.translation() = Eigen::Vector3d(msg->pose.pose.position.x,
                                                         msg->pose.pose.position.y,
@@ -150,13 +195,11 @@ namespace small_gicp_localization
 
             Eigen::Isometry3d base_link_to_cloud_eigen = tf2::transformToEigen(base_link_to_cloud);
             init_T = map_to_base_link * base_link_to_cloud_eigen;
-            publish_T = init_T;
             RCLCPP_INFO(this->get_logger(),"get init_T");
         }
         else
         {
             init_T = map_to_base_link;
-            publish_T = init_T;
         }
     }
 }

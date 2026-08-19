@@ -16,7 +16,7 @@
 #include <memory>
 
 #include "potential_escape_action/potential_escape_action.hpp"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include <tf2/utils.h>
 
 namespace nav2_behavior_tree
@@ -243,7 +243,7 @@ void EscapeAction::on_tick()
 }
 
 } // namespace nav2_behavior_tree
-#include "behaviortree_cpp_v3/bt_factory.h"
+#include "behaviortree_cpp/bt_factory.h"
 BT_REGISTER_NODES(factory)
 {
   factory.registerNodeType<nav2_behavior_tree::RegionTimeoutCondition>("RegionTimeout");

@@ -9,6 +9,10 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <exec_depend>nav2_mppi_controller</exec_depend>
+  <exec_depend>simulated_obstacle_gui</exec_depend>
+  <exec_depend>simulated_obstacle_layer</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 
