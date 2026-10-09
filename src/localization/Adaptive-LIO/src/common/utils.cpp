@@ -225,5 +225,7 @@ Eigen::Matrix3d g2R(const Eigen::Vector3d &g)
      double yaw = R2ypr(R0).x();
      R0 = ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
      // R0 = Utility::ypr2R(Eigen::Vector3d{-90, 0, 0}) * R0;
-     return R0;
+     Eigen::Quaterniond q(R0);
+     q.normalize();
+     return q.toRotationMatrix();
 }

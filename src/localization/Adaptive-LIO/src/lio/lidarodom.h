@@ -2,6 +2,7 @@
 #define LIDAR_ODOM_M_H__
 #include "common/timer/timer.h"
 #include "lio/lidarFactor.h"
+#include "lio/poseParameterization.h"
 
 #include "algo/eskf.hpp"
 #include "algo/static_imu_init.h"
@@ -159,7 +160,7 @@ namespace zjloc
           void addPointToPcl(pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_points,
                              const Eigen::Vector3d &point, const double &intensity);
 
-          double checkLocalizability(std::vector<Eigen::Vector3d> planeNormals);
+          double checkLocalizability(const std::vector<Eigen::Vector3d> &planeNormals);
 
           // search neighbors
           Neighborhood computeNeighborhoodDistribution(

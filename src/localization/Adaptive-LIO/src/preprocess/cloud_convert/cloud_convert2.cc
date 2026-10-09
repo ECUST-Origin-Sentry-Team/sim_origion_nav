@@ -2,6 +2,7 @@
 
 #include <glog/logging.h>
 #include <yaml-cpp/yaml.h>
+#include <algorithm>
 // #include <execution>
 
 namespace zjloc
@@ -22,8 +23,8 @@ namespace zjloc
         {
             AviaHandler(msg);
         }
-        pcl_out = v_cloud;
-        v_t = v_timestamp;
+        pcl_out = std::move(v_cloud);
+        v_t = std::move(v_timestamp);
     }
 
     void CloudConvert2::Process(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg,
@@ -54,18 +55,26 @@ namespace zjloc
             LOG(ERROR) << "Error LiDAR Type: " << int(lidar_type_);
             break;
         }
-        pcl_out = v_cloud;
-        v_t = v_timestamp;
+        pcl_out = std::move(v_cloud);
+        v_t = std::move(v_timestamp);
     }
 
     void CloudConvert2::AviaHandler(const livox_ros_driver2::msg::CustomMsg::ConstSharedPtr &msg)
     {
-        int plsize = msg->point_num;
+        const int plsize = std::min<int>(msg->point_num, msg->points.size());
+        if (plsize <= 0 || sweep_cut_num <= 0)
+        {
+            return;
+        }
 
         static double tm_scale = 1e9;
 
         double headertime = msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9;
-        timespan_ = msg->points.back().offset_time / tm_scale;
+        timespan_ = msg->points[plsize - 1].offset_time / tm_scale;
+        if (timespan_ <= 0.0)
+        {
+            return;
+        }
 
         delta_time = timespan_ / sweep_cut_num;
         // 每一个小片段结束时的相对时间
@@ -103,11 +112,9 @@ namespace zjloc
                 // 绝对时间戳
                 point_temp.timestamp = headertime + point_temp.relative_time;
 
-                int id = (msg->points[i].offset_time / tm_scale) / delta_time; //  get id
-                if (id < 0 || id >= sweep_cut_num)
-                {
-                    id = id - 1;
-                }                // 当前点在它所属的那个小时间段内的归一化时间比例
+                int id = static_cast<int>((msg->points[i].offset_time / tm_scale) / delta_time); //  get id
+                id = std::clamp(id, 0, sweep_cut_num - 1);
+                // 当前点在它所属的那个小时间段内的归一化时间比例
                 point_temp.alpha_time = point_temp.relative_time / delta_time - id;
                 // 记录每个小时间分段的时间跨度
                 point_temp.timespan = delta_time;
@@ -120,12 +127,20 @@ namespace zjloc
 
     void CloudConvert2::AuxAviaHandler(const livox_ros_driver2::msg::CustomMsg::ConstSharedPtr &msg)
     {
-        int plsize = msg->point_num;
+        const int plsize = std::min<int>(msg->point_num, msg->points.size());
+        if (plsize <= 0)
+        {
+            return;
+        }
 
         static double tm_scale = 1e9;
 
         double headertime = msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9;
-        timespan_ = msg->points.back().offset_time / tm_scale;
+        timespan_ = msg->points[plsize - 1].offset_time / tm_scale;
+        if (timespan_ <= 0.0)
+        {
+            return;
+        }
 
         v_timestamp.resize(1);
         v_timestamp[0] = timespan_;
@@ -443,16 +458,24 @@ namespace zjloc
 
     void CloudConvert2::reset()
     {
-        v_cloud.reserve(sweep_cut_num);
-        if (v_cloud.size() != sweep_cut_num)
+        if (sweep_cut_num <= 0)
         {
-            v_cloud.reserve(sweep_cut_num);
-            for (int i = 0; i < sweep_cut_num; i++)
-                v_cloud.push_back(std::vector<point3D>());
+            sweep_cut_num = 1;
         }
 
-        for (int i = 0; i < sweep_cut_num; i++)
-            std::vector<point3D>().swap(v_cloud[i]);
+        if (v_cloud.size() != static_cast<size_t>(sweep_cut_num))
+        {
+            v_cloud.clear();
+            v_cloud.resize(sweep_cut_num);
+        }
+        else
+        {
+            for (auto &cloud : v_cloud)
+            {
+                cloud.clear(); // keep capacity to avoid per-frame reallocation
+            }
+        }
+        v_timestamp.clear();
     }
 
     void CloudConvert2::adaCut()

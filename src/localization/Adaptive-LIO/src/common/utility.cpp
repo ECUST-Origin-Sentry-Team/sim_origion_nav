@@ -1,10 +1,13 @@
 #include "utility.h"
 
+#include <algorithm>
+#include <cmath>
+
 double AngularDistance(const Eigen::Matrix3d &rota, const Eigen::Matrix3d &rotb)
 {
-     double norm = ((rota * rotb.transpose()).trace() - 1) / 2;
-     norm = std::acos(norm) * 180 / M_PI;
-     return norm;
+     double cos_angle = ((rota * rotb.transpose()).trace() - 1) / 2;
+     cos_angle = std::clamp(cos_angle, -1.0, 1.0);
+     return std::acos(cos_angle) * 180 / M_PI;
 }
 
 double AngularDistance(const Eigen::Vector3d &qa, const Eigen::Vector3d &qb)
@@ -16,19 +19,28 @@ double AngularDistance(const Eigen::Vector3d &qa, const Eigen::Vector3d &qb)
      Eigen::Matrix3d rota = q_a.toRotationMatrix();
      Eigen::Matrix3d rotb = q_b.toRotationMatrix();
 
-     double norm = ((rota * rotb.transpose()).trace() - 1) / 2;
-     norm = std::acos(norm) * 180 / M_PI;
-     return norm;
+     double cos_angle = ((rota * rotb.transpose()).trace() - 1) / 2;
+     cos_angle = std::clamp(cos_angle, -1.0, 1.0);
+     return std::acos(cos_angle) * 180 / M_PI;
 }
 
 double AngularDistance(const Eigen::Quaterniond &q_a, const Eigen::Quaterniond &q_b)
 {
-     Eigen::Matrix3d rota = q_a.toRotationMatrix();
-     Eigen::Matrix3d rotb = q_b.toRotationMatrix();
+     Eigen::Quaterniond qa = q_a;
+     Eigen::Quaterniond qb = q_b;
+     if (qa.norm() < 1e-12 || qb.norm() < 1e-12)
+     {
+          return 0.0;
+     }
+     qa.normalize();
+     qb.normalize();
 
-     double norm = ((rota * rotb.transpose()).trace() - 1) / 2;
-     norm = std::acos(norm) * 180 / M_PI;
-     return norm;
+     Eigen::Matrix3d rota = qa.toRotationMatrix();
+     Eigen::Matrix3d rotb = qb.toRotationMatrix();
+
+     double cos_angle = ((rota * rotb.transpose()).trace() - 1) / 2;
+     cos_angle = std::clamp(cos_angle, -1.0, 1.0);
+     return std::acos(cos_angle) * 180 / M_PI;
 }
 
 void sub_sample_frame(std::vector<point3D> &frame, double size_voxel)
@@ -55,9 +67,33 @@ void sub_sample_frame(std::vector<point3D> &frame, double size_voxel)
 void grid_sampling(const std::vector<point3D> &frame, std::vector<point3D> &keypoints, double size_voxel_subsampling)
 {
      keypoints.clear();
-     std::vector<point3D> frame_sub(frame);
-     sub_sample_frame(frame_sub, size_voxel_subsampling);
-     keypoints = std::move(frame_sub);
+     if (frame.empty())
+     {
+          return;
+     }
+
+     // Direct voxel sampling avoids copying the whole input frame before downsampling.
+     // Semantics stay the same as sub_sample_frame(): one representative point per voxel.
+     tsl::robin_map<voxel, size_t> selected;
+     selected.reserve(std::max<size_t>(frame.size() / 4, 1));
+
+     voxel vox;
+     for (size_t i = 0; i < frame.size(); ++i)
+     {
+          vox.x = static_cast<short>(frame[i].point[0] / size_voxel_subsampling);
+          vox.y = static_cast<short>(frame[i].point[1] / size_voxel_subsampling);
+          vox.z = static_cast<short>(frame[i].point[2] / size_voxel_subsampling);
+          if (selected.find(vox) == selected.end())
+          {
+               selected[vox] = i;
+          }
+     }
+
+     keypoints.reserve(selected.size());
+     for (const auto &[_, idx] : selected)
+     {
+          keypoints.push_back(frame[idx]);
+     }
 }
 
 

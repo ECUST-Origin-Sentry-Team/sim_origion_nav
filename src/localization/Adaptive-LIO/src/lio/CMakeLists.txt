@@ -1,5 +1,6 @@
 
 add_library(${PROJECT_NAME}.lio
+        poseParameterization.cpp
         lidarFactor.cpp
         lio_utils.cpp
         lidarodom.cpp

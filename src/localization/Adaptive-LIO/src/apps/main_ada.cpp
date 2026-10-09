@@ -655,52 +655,61 @@ private:
     }
 };
 
-void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
+void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::ConstSharedPtr msg)
 {
     // cloud_vec	一整帧 Livox 点云，被切成的多个子点云
     // cloud_out	第 i 个子点云（时间片）
     std::vector<std::vector<point3D>> cloud_vec;
     std::vector<double> t_out;
-    auto shared_msg = std::make_shared<const livox_ros_driver2::msg::CustomMsg>(*msg);
 
+    // Use the ROS shared pointer directly to avoid copying the full Livox message.
     zjloc::common::Timer::Evaluate([&]()
-                                   { convert->Process(shared_msg, cloud_vec, t_out, false); },
+                                   { convert->Process(msg, cloud_vec, t_out, false); },
                                    "laser convert");
 
-    for (int i = 0; i < cloud_vec.size(); i++)
+    if (cloud_vec.empty() || t_out.empty())
+    {
+        return;
+    }
+
+    const size_t segment_count = std::min(cloud_vec.size(), t_out.size());
+    for (size_t i = 0; i < segment_count; i++)
     {
         auto &cloud_out = cloud_vec[i];
         double sample_size = lio->getIndex() < 20 ? 0.01 : 0.01;
         // double sample_size = 0.01;
-        std::mt19937_64 g;
+        thread_local std::mt19937_64 g;
         zjloc::common::Timer::Evaluate([&]()
                                        { std::shuffle(cloud_out.begin(), cloud_out.end(), g);
-            subSampleFrame(cloud_out, sample_size);
-            std::shuffle(cloud_out.begin(), cloud_out.end(), g); },
+            sub_sample_frame(cloud_out, sample_size); },
                                        "laser ds");
         lio->pushData(std::move(cloud_out), std::make_pair(msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9 + t_out[i] - t_out[0], t_out[0]), false);
         // pair<本段数据的绝对起始时间,数据持续时长>
     }
 }
 
-void aux_livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
+void aux_livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::ConstSharedPtr msg)
 {
     std::vector<std::vector<point3D>> cloud_vec; // 附属雷达只存于第0个时间片
     std::vector<double> t_out;                   // 只有第0个时间片，代表总体的时间长度
-    auto shared_msg = std::make_shared<const livox_ros_driver2::msg::CustomMsg>(*msg);
 
+    // Keep auxiliary LiDAR behavior unchanged; only remove the full-message copy.
     zjloc::common::Timer::Evaluate([&]()
-                                   { convert->Process(shared_msg, cloud_vec, t_out, true); },
+                                   { convert->Process(msg, cloud_vec, t_out, true); },
                                    "laser convert");
+
+    if (cloud_vec.empty() || t_out.empty())
+    {
+        return;
+    }
 
     auto &cloud_out = cloud_vec[0];
     double sample_size = lio->getIndex() < 20 ? 0.01 : 0.01;
     // double sample_size = 0.01;
-    std::mt19937_64 g;
+    thread_local std::mt19937_64 g;
     zjloc::common::Timer::Evaluate([&]()
                                    { std::shuffle(cloud_out.begin(), cloud_out.end(), g);
-        subSampleFrame(cloud_out, sample_size);
-        std::shuffle(cloud_out.begin(), cloud_out.end(), g); },
+        sub_sample_frame(cloud_out, sample_size); },
                                    "laser ds");
 
     lio->pushData(std::move(cloud_out), std::make_pair(msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9, t_out[0]), true);
@@ -716,16 +725,16 @@ void standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
                                    { convert->Process(msg, cloud_vec, t_out); },
                                    "laser convert");
 
-    for (int i = 0; i < cloud_vec.size(); i++)
+    const size_t segment_count = std::min(cloud_vec.size(), t_out.size());
+    for (size_t i = 0; i < segment_count; i++)
     {
         auto &cloud_out = cloud_vec[i];
         double sample_size = lio->getIndex() < 30 ? 0.02 : 0.1;
         // double sample_size = 0.05;
         zjloc::common::Timer::Evaluate([&]() { // boost::mt19937_64 g;
-            std::mt19937_64 g;
+            thread_local std::mt19937_64 g;
             std::shuffle(cloud_out.begin(), cloud_out.end(), g);
             sub_sample_frame(cloud_out, sample_size);
-            std::shuffle(cloud_out.begin(), cloud_out.end(), g);
         },
                                        "laser ds");
 
