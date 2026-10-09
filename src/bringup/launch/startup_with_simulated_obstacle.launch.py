@@ -163,12 +163,6 @@ def generate_launch_description():
         )
     )
 
-    region_behavior = Node(
-        package="region_behavior",
-        executable="region_behavior_node",
-        namespace='',
-        output="screen",
-    )
     icp = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             get_package_share_directory('icp_registration')+'/launch/icp.launch.py'
@@ -191,7 +185,6 @@ def generate_launch_description():
              load_map_server,
             #  p_to_l,
              fake_baselink,
-            #  region_behavior,
             #  TimerAction(
             #     period=4.0,
             #     actions=[icp],

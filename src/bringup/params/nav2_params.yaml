@@ -140,29 +140,6 @@ controller_server:
         twirling_cost_power: 1
         twirling_cost_weight: 10.0
 
-dog_map_node:
-    ros__parameters:
-      use_sim_time: true
-      cloud_topic: "/livox/lidar/pointcloud"
-      target_frame: "map"
-      base_frame: "base_link_fake"
-      transform_timeout: 0.2
-      transform_queue_size: 30
-      half_map_size: 10.0 #以车为中心的局部地图,也就是点云分析范围
-      resolution_z: 0.01 #z方向分辨率,用于高层分析
-      # 仿真 URDF: base_link -> chassis z=-0.6 m，车轮半径约 0.0758 m
-      ground_z_in_base: -0.676
-      min_obstacle_height: 0.091 #局部地面以上的最小障碍高度
-      max_obstacle_height: 0.7 #最高点云高度,高于此数值的过滤
-      min_obstacle_column_height: 0.06 #过滤低于6cm的竖向噪声
-      frame_save: 3 # 地图记忆帧数
-      LOG_OCC_HIT_mid360: 34
-      LOG_OCC_FREE: -20
-      THR_OCC: 30
-      MAX_LOG_MID360: 34
-      MIN_LOG: 5
-      map_yaml_path: "/home/hexinyi/sim/sim_origion_nav/src/bringup/map/rmuc_2025_normalized.yaml"
-
 local_costmap:
   local_costmap:
     ros__parameters:
