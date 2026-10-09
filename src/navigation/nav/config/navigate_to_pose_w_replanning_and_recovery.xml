@@ -26,7 +26,7 @@
           <AlwaysSuccess/>
         </Fallback>
 
-        <!-- 1 Hz 重新规划，并在规划完成后执行 MINCO 平滑 -->
+        <!-- 1 Hz 重新规划，并在规划完成后执行路径平滑 -->
         <RateController hz="1.0">
           <Fallback name="UpdatePathOrKeepCommittedPath">
             <RecoveryNode number_of_retries="1" name="ComputeAndSmoothPath">
@@ -40,7 +40,7 @@
                                    planner_id="GridBased"/>
                 <SmoothPath unsmoothed_path="{raw_path}"
                             smoothed_path="{candidate_path}"
-                            smoother_id="minco_smoother"
+                            smoother_id="simple_smoother"
                             was_completed="{smoothing_completed}"/>
                 <BlackboardCheckBool value_A="{smoothing_completed}"
                                      value_B="true"

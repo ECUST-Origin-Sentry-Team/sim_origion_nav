@@ -373,30 +373,6 @@ planner_server:
       allow_unknown: true
       use_final_approach_orientation: true
 
-    # planner_plugins: ["GridBased"]
-    # GridBased:
-    #   plugin: "topology_global_planner::TopologyGlobalPlanner"
-    #   topology_yaml: "/home/hexinyi/sim/sim_origion_nav/src/navigation/topology_global_planner/config/topo.yaml"
-    #   use_topology: true
-    #   fallback_to_inner_planner: false
-    #   allow_nearest_region_fallback: false
-    #   region_boundary_tolerance: 0.03
-    #   transform_tolerance: 0.1
-    #   duplicate_pose_tolerance: 0.02
-    #   max_nearest_region_distance: 1.0   # only used when allow_nearest_region_fallback=true
-    #   enforce_region_constraint: true
-    #   region_constraint_tolerance: 0.15   # meters; allow small boundary/portal tolerance
-    #   # Inner planner = your original global planner.
-    #   inner_planner_name: "InnerPlanner"
-    #   inner_planner_plugin: "nav2_navfn_planner/NavfnPlanner"
-
-    # InnerPlanner:
-    #   plugin: "nav2_navfn_planner/NavfnPlanner"
-    #   tolerance: 0.2
-    #   use_astar: false
-    #   allow_unknown: true
-    #   use_final_approach_orientation: true
-
 smoother_server:
   ros__parameters:
     use_sim_time: True
@@ -406,74 +382,6 @@ smoother_server:
       tolerance: 1.0e-10
       max_its: 1000
       do_refinement: True
-
-# smoother_server:
-#   ros__parameters:
-#     use_sim_time: true
-#     costmap_topic: global_costmap/costmap_raw
-#     footprint_topic: global_costmap/published_footprint
-#     robot_base_frame: base_link_fake
-#     transform_tolerance: 0.1
-# # 平滑器插件列表
-#     smoother_plugins: ["minco_smoother"]
-#     # MINCO 平滑器配置
-#     minco_smoother:
-#       # plugin: "we_smoother/BSplineSmoother"
-#       plugin: "pb_minco/MincoSmoother"
-#       odom_topic: "/odom"
-#       # ========== 第一阶段优化参数：优化轨迹形状 ==========
-#       stage1_weight_smooth: 1.0       # 阶段1 平滑性权重
-#       stage1_weight_obstacle: 80.0    # 阶段1 避障权重
-#       stage1_weight_feasibility: 15.0 # 阶段1动力学可行性权重
-#       stage1_weight_time: 5.0         # 阶段1 时间正则化权重
-#       stage1_weight_mean_time: 5.0    # 阶段1 平均时间约束权重
-#       stage1_weight_reference: 20.0  # 锚定原始路径内点，抑制弯道切角
-#       stage1_max_iterations: 250      # 阶段1 最大迭代次数
-#       # ========== 第二阶段优化权重：优化动力学性质 ==========
-#       weight_smooth: 1.0           # 平滑性权重
-#       weight_obstacle: 200.0        # footprint 外接圆的 ESDF 避障权重
-#       weight_feasibility: 50.0      # 动力学可行性权重
-#       weight_time: 5.0              # 时间正则化权重
-#       weight_mean_time: 10.0        # 平均时间约束权重
-#       weight_reference: 40.0        # 第二阶段仍以原始路径为参考，防止累计漂移
-#       max_iterations: 350           # L-BFGS 最大迭代次数
-#       g_epsilon: 1.0e-4             # 必须为正，允许梯度收敛
-#       integral_resolution: 16       # 每段积分采样数
-#       min_time: 0.08                # 每段严格最小时间 (s)
-#       validation_dt: 0.02           # 发布前硬验证采样间隔 (s)
-#       obstacle_cost_threshold: 254  # 仅原始致命障碍进入 ESDF，避免重复膨胀
-#       footprint_collision_cost_threshold: 254
-#       unknown_is_obstacle: true
-#       # ========== 平均时间约束参数 ==========
-#       mean_time_lower_bound: 0.9      # T_i 下界 = avg_T * 0.9
-#       mean_time_upper_bound: 1.1      # T_i 上界 = avg_T * 1.1
-#       # ========== 动力学约束 ==========
-#       max_vel: 2.2                 # 最大速度 (m/s)
-#       max_acc: 3.0                 # 最大加速度 (m/s²)
-#       safe_distance: 0.05          # 实际 footprint 外的额外安全裕量 (m)
-#       optimization_clearance_margin: 0.02 # 优化目标比最终硬净空多留2cm
-#       center_clearance_tolerance: 0.005 # ESDF栅格插值容差；真实footprint仍硬检查
-#       # 当前实车位置是不可优化的固定起点。仅当真实 footprint 无碰撞时，
-#       # 允许从有限的额外净空缺口中驶出，并要求很快恢复完整安全裕量。
-#       enable_start_clearance_escape: true
-#       start_escape_max_clearance_deficit: 0.025
-#       start_escape_max_clearance_drop: 0.005
-#       start_escape_max_duration: 1.0
-#       start_escape_max_distance: 0.30
-#       fallback_robot_radius: 0.17  # footprint topic 不可用时；需替换为实测值
-#       footprint_orientation_mode: "fixed"
-#       fixed_footprint_yaw: 0.0
-#       # ========== 路径处理参数 ==========
-#       min_waypoints: 3             # 最少路点数
-#       max_waypoints: 40            # 限制优化维度和最坏执行时间
-#       # ========== 输出参数 ==========
-#       output_dt: 0.05              # 输出 Nav2 Path 采样间隔 (s)
-#       publish_trajectory: true     # 发布轨迹可视化 (话题: minco_trajectory)
-#       # ========== 均匀时间采样参数 ==========
-#       resample_time_resolution: 0.35  # 重采样时间分辨率 (s)
-#       rotation_penalty_weight: 0.1    # 旋转惩罚权重
-#       dense_sample_resolution: 0.1    # 密集采样分辨率 (m)
-
 
 behavior_server:
   ros__parameters:
