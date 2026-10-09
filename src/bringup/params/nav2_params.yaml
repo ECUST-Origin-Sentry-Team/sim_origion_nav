@@ -177,11 +177,6 @@ local_costmap:
       resolution: 0.025
       robot_radius: 0.17
       plugins: ["static_layer", "simulated_obstacle_layer", "inflation_layer"]
-      # fast_layer:
-      #   plugin: fast_layer::FastLayer
-      #   pointcloud_topic: /rog_map/inf_occ
-      #   pointcloud_timeout: 0.5
-      #   transform_timeout: 0.1
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -288,11 +283,6 @@ global_costmap:
       track_unknown_space: true
       #plugins: ["static_layer", "simulated_obstacle_layer", "inflation_layer"]
       plugins: ["static_layer","inflation_layer"]
-      # fast_layer:
-      #   plugin: fast_layer::FastLayer
-      #   pointcloud_topic: /rog_map/inf_occ
-      #   pointcloud_timeout: 0.5
-      #   transform_timeout: 0.1
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
