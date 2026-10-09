@@ -13,10 +13,10 @@ Use this file as the default playbook for coding agents working anywhere in the 
 ## Workspace Shape
 - Source packages live under `src/`.
 - Generated artifacts live under `build/`, `install/`, and `log/`; do not edit them.
-- The workspace is mostly `ament_cmake` packages, with three `ament_python` packages:
+- The workspace is mostly `ament_cmake` packages, with these `ament_python` packages:
   - `dec_tree`
-  - `check_invincible`
   - `rm_serial`
+  - `simulated_obstacle_gui`
 - Vendored or third-party code exists, especially under:
   - `src/localization/Adaptive-LIO/thirdparty/`
   - `src/localization/lightning-lm/thirdparty/`
