@@ -163,12 +163,6 @@ def generate_launch_description():
         )
     )
 
-    icp = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            get_package_share_directory('icp_registration')+'/launch/icp.launch.py'
-        )
-    )
-
     return LaunchDescription(
         [
             #  rm_serial,
@@ -185,16 +179,11 @@ def generate_launch_description():
              load_map_server,
             #  p_to_l,
              fake_baselink,
-            #  TimerAction(
-            #     period=4.0,
-            #     actions=[icp],
-            # ),
              TimerAction(
                 period=3.0,
                 actions=[nav2],
             ),
             #  nav2,
-            # icp,
             
         ]
     )

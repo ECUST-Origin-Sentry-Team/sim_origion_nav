@@ -102,17 +102,8 @@ def generate_launch_description():
     ])
 
 
-    icp = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            
-            get_package_share_directory('icp_registration')+'/launch/icp.launch.py'
-        )
-    )
-
-
     # Create the launch description and populate
     ld = LaunchDescription()
-    # ld.add_action(icp)
     # Set environment variables
     ld.add_action(stdout_linebuf_envvar)
 
